@@ -9,7 +9,7 @@ const io = new Server(server, {
 });
 
 // Serve static frontend files from 'public' folder
-app.use(express.static('public'));
+app.use(express.static(__dirname));
 
 // Store active Admin socket IDs (Max 2)
 let connectedAdmins = new Set();
