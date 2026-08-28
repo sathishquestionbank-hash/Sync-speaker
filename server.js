@@ -9,6 +9,7 @@ const io = new Server(server, {
     cors: { origin: "*", methods: ["GET", "POST"] }
 });
 
+// Serve static files from root and public directories
 app.use(express.static(__dirname));
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -20,6 +21,9 @@ let currentPlaybackState = {
 };
 
 io.on('connection', (socket) => {
+    console.log(`[Device Connected] ID: ${socket.id}`);
+
+    // Register Role (Max 2 Admins allowed)
     socket.on('register-role', (requestedRole) => {
         if (requestedRole === 'admin') {
             if (connectedAdmins.size < 2) {
@@ -38,6 +42,7 @@ io.on('connection', (socket) => {
             socket.emit('role-assigned', { role: 'listener' });
         }
 
+        // Send latest sync state to freshly connected client
         socket.emit('sync-state', currentPlaybackState);
 
         io.emit('stats-update', {
@@ -46,6 +51,7 @@ io.on('connection', (socket) => {
         });
     });
 
+    // Time Synchronization Ping-Pong for Drift Calculation
     socket.on('time-sync-ping', (clientTime) => {
         socket.emit('time-sync-pong', {
             clientTime: clientTime,
@@ -53,6 +59,7 @@ io.on('connection', (socket) => {
         });
     });
 
+    // Handle Admin Master Audio Commands
     socket.on('admin-audio-action', (data) => {
         if (socket.role !== 'admin') return;
 
@@ -62,6 +69,7 @@ io.on('connection', (socket) => {
             seekPosition: data.seekPosition || 0
         };
 
+        // Broadcast synchronized audio event to all connected devices
         io.emit('audio-sync-receive', {
             action: data.action,
             startTimestamp: currentPlaybackState.startTimestamp,
@@ -83,5 +91,5 @@ io.on('connection', (socket) => {
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, '0.0.0.0', () => {
-    console.log(`Sync Speaker Studio running on port ${PORT}`);
+    console.log(`Sync Speaker Studio server running on port ${PORT}`);
 });
