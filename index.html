@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sync Speaker Studio</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <style>
+        body { font-family: sans-serif; background: #0d1117; color: #c9d1d9; text-align: center; padding: 20px; }
+        .card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 20px; margin: 15px auto; max-width: 400px; }
+        button { padding: 12px 20px; margin: 8px 0; font-size: 15px; font-weight: bold; border: none; border-radius: 6px; cursor: pointer; width: 100%; }
+        .btn-admin { background: #238636; color: white; }
+        .btn-listener { background: #1f6feb; color: white; }
+        .btn-play { background: #da3633; color: white; font-size: 18px; padding: 15px; }
+    </style>
+</head>
+<body>
+    <h1>Sync Speaker Studio</h1>
+    <div class="card">
+        <p>Current Role: <b id="role-display" style="color: #f2cc60;">Unassigned</b></p>
+        <p>Status: <b id="status" style="color: #f2cc60;">Disconnected</b></p>
+        <p id="stats-display">Devices: 0 | Admins: 0/2</p>
+    </div>
+
+    <div id="role-selection" class="card">
+        <button class="btn-admin" onclick="joinAs('admin')">Join as Admin (Controller)</button>
+        <button class="btn-listener" onclick="joinAs('listener')">Join as Listener</button>
+    </div>
+
+    <div id="admin-controls" class="card" style="display: none;">
+        <button class="btn-play" onclick="triggerPlay()">TRIGGER SYNC SIGNAL</button>
+    </div>
+
+    <script>
+        const socket = io();
+
+        function joinAs(role) {
+            socket.emit('register-role', role);
+        }
+
+        socket.on('role-assigned', (data) => {
+            document.getElementById('role-display').innerText = data.role.toUpperCase();
+            document.getElementById('status').innerText = 'Connected';
+            document.getElementById('role-selection').style.display = 'none';
+
+            if (data.role === 'admin') {
+                document.getElementById('admin-controls').style.display = 'block';
+            }
+            if (data.message) alert(data.message);
+        });
+
+        socket.on('stats-update', (stats) => {
+            document.getElementById('stats-display').innerText = 
+                `Devices: ${stats.totalDevices} | Active Admins: ${stats.adminCount}/2`;
+        });
+
+        function triggerPlay() {
+            socket.emit('sync-action', { action: 'play', timestamp: Date.now() });
+        }
+
+        socket.on('sync-receive', (data) => {
+            alert("Audio Sync Triggered by Admin!");
+        });
+    </script>
+</body>
+</html>
