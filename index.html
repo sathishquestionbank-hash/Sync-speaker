@@ -6,33 +6,73 @@
     <title>Sync Speaker Studio</title>
     <script src="/socket.io/socket.io.js"></script>
     <style>
-        body { font-family: sans-serif; background: #0d1117; color: #c9d1d9; text-align: center; padding: 20px; }
-        .card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 20px; margin: 15px auto; max-width: 400px; }
-        button { padding: 12px 20px; margin: 8px 0; font-size: 15px; font-weight: bold; border: none; border-radius: 6px; cursor: pointer; width: 100%; }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0d1117; color: #c9d1d9; text-align: center; padding: 20px; }
+        h1 { margin: 15px 0; color: #58a6ff; font-size: 24px; }
+        .card { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 20px; margin: 15px auto; max-width: 450px; box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
+        .status-val { font-weight: bold; color: #f2cc60; }
+        button { padding: 12px 20px; margin: 8px 0; font-size: 15px; font-weight: bold; border: none; border-radius: 6px; cursor: pointer; width: 100%; transition: opacity 0.2s; }
+        button:hover { opacity: 0.9; }
         .btn-admin { background: #238636; color: white; }
         .btn-listener { background: #1f6feb; color: white; }
-        .btn-play { background: #da3633; color: white; font-size: 18px; padding: 15px; }
+        .btn-play { background: #238636; color: white; font-size: 16px; margin-top: 10px; }
+        .btn-pause { background: #da3633; color: white; font-size: 16px; }
+        input[type="file"], input[type="text"] { width: 100%; padding: 10px; margin: 8px 0; border-radius: 6px; border: 1px solid #30363d; background: #0d1117; color: #c9d1d9; }
+        .info-text { font-size: 13px; color: #8b949e; margin-top: 6px; }
     </style>
 </head>
 <body>
+
     <h1>Sync Speaker Studio</h1>
+
+    <!-- System Status -->
     <div class="card">
-        <p>Current Role: <b id="role-display" style="color: #f2cc60;">Unassigned</b></p>
-        <p>Status: <b id="status" style="color: #f2cc60;">Disconnected</b></p>
-        <p id="stats-display">Devices: 0 | Admins: 0/2</p>
+        <p>Role: <span id="role-display" class="status-val">Unassigned</span></p>
+        <p>Status: <span id="status-display" class="status-val">Connecting...</span></p>
+        <p id="stats-display" class="info-text">Devices: 0 | Admins: 0/2</p>
+        <p id="offset-display" class="info-text">Clock Latency Offset: 0 ms</p>
     </div>
 
+    <!-- Role Selection -->
     <div id="role-selection" class="card">
+        <h3>Select Connection Role</h3>
         <button class="btn-admin" onclick="joinAs('admin')">Join as Admin (Controller)</button>
         <button class="btn-listener" onclick="joinAs('listener')">Join as Listener</button>
     </div>
 
+    <!-- Admin Master Controls -->
     <div id="admin-controls" class="card" style="display: none;">
-        <button class="btn-play" onclick="triggerPlay()">TRIGGER SYNC SIGNAL</button>
+        <h3 style="color: #2f81f7; margin-bottom: 10px;">Master Control Desk</h3>
+        <label style="font-size: 13px; text-align: left; display: block;">Select Audio File:</label>
+        <input type="file" id="audio-file-input" accept="audio/*" onchange="loadAudioFile(event)">
+        
+        <button class="btn-play" onclick="sendAdminAction('play')">PLAY / RESYNC ALL</button>
+        <button class="btn-pause" onclick="sendAdminAction('pause')">PAUSE ALL</button>
     </div>
+
+    <!-- Audio Player Element -->
+    <audio id="audio-player" style="display: none;"></audio>
 
     <script>
         const socket = io();
+        let serverOffset = 0;
+        let audioPlayer = document.getElementById('audio-player');
+
+        // Measure Server-Client Clock Offset
+        function measureLatency() {
+            const start = Date.now();
+            socket.emit('time-sync-ping', start);
+        }
+
+        socket.on('time-sync-pong', (data) => {
+            const now = Date.now();
+            const rtt = now - data.clientTime;
+            const estimatedServerTime = data.serverTime + (rtt / 2);
+            serverOffset = estimatedServerTime - now;
+            document.getElementById('offset-display').innerText = `Clock Latency Offset: ${Math.round(serverOffset)} ms`;
+        });
+
+        setInterval(measureLatency, 5000);
 
         function joinAs(role) {
             socket.emit('register-role', role);
@@ -40,7 +80,7 @@
 
         socket.on('role-assigned', (data) => {
             document.getElementById('role-display').innerText = data.role.toUpperCase();
-            document.getElementById('status').innerText = 'Connected';
+            document.getElementById('status-display').innerText = 'Connected';
             document.getElementById('role-selection').style.display = 'none';
 
             if (data.role === 'admin') {
@@ -51,15 +91,42 @@
 
         socket.on('stats-update', (stats) => {
             document.getElementById('stats-display').innerText = 
-                `Devices: ${stats.totalDevices} | Active Admins: ${stats.adminCount}/2`;
+                `Devices: ${stats.totalDevices} | Admins: ${stats.adminCount}/2`;
         });
 
-        function triggerPlay() {
-            socket.emit('sync-action', { action: 'play', timestamp: Date.now() });
+        // Load Audio locally into browser memory
+        function loadAudioFile(event) {
+            const file = event.target.files[0];
+            if (file) {
+                const objectUrl = URL.createObjectURL(file);
+                audioPlayer.src = objectUrl;
+                alert("Audio loaded locally! Ready to sync.");
+            }
         }
 
-        socket.on('sync-receive', (data) => {
-            alert("Audio Sync Triggered by Admin!");
+        // Admin Sends Synchronized Commands
+        function sendAdminAction(action) {
+            socket.emit('admin-audio-action', {
+                action: action,
+                timestamp: Date.now() + serverOffset,
+                seekPosition: audioPlayer.currentTime || 0
+            });
+        }
+
+        // Receive Synchronized Audio Signal
+        socket.on('audio-sync-receive', (data) => {
+            if (data.action === 'play') {
+                const now = Date.now() + serverOffset;
+                const timePassed = (now - data.startTimestamp) / 1000;
+                const targetSeek = Math.max(0, data.seekPosition + timePassed);
+
+                if (Math.abs(audioPlayer.currentTime - targetSeek) > 0.1) {
+                    audioPlayer.currentTime = targetSeek;
+                }
+                audioPlayer.play().catch(e => console.log("User interaction required for autoplay:", e));
+            } else if (data.action === 'pause') {
+                audioPlayer.pause();
+            }
         });
     </script>
 </body>
