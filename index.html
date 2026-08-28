@@ -3,62 +3,179 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sync Speaker Studio</title>
+    <title>Sync Speaker Studio - DSP Engine</title>
     <script src="/socket.io/socket.io.js"></script>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0d1117; color: #c9d1d9; text-align: center; padding: 20px; }
-        h1 { margin: 15px 0; color: #58a6ff; font-size: 24px; }
-        .card { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 20px; margin: 15px auto; max-width: 450px; box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0b0e14; color: #c9d1d9; text-align: center; padding: 15px; }
+        h1 { margin: 10px 0; color: #58a6ff; font-size: 22px; }
+        .card { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 15px; margin: 12px auto; max-width: 480px; text-align: left; }
+        .center { text-align: center; }
         .status-val { font-weight: bold; color: #f2cc60; }
-        button { padding: 12px 20px; margin: 8px 0; font-size: 15px; font-weight: bold; border: none; border-radius: 6px; cursor: pointer; width: 100%; transition: opacity 0.2s; }
-        button:hover { opacity: 0.9; }
+        button { padding: 12px 16px; margin: 6px 0; font-size: 14px; font-weight: bold; border: none; border-radius: 6px; cursor: pointer; width: 100%; }
         .btn-admin { background: #238636; color: white; }
         .btn-listener { background: #1f6feb; color: white; }
-        .btn-play { background: #238636; color: white; font-size: 16px; margin-top: 10px; }
-        .btn-pause { background: #da3633; color: white; font-size: 16px; }
-        input[type="file"], input[type="text"] { width: 100%; padding: 10px; margin: 8px 0; border-radius: 6px; border: 1px solid #30363d; background: #0d1117; color: #c9d1d9; }
-        .info-text { font-size: 13px; color: #8b949e; margin-top: 6px; }
+        .btn-play { background: #238636; color: white; margin-top: 8px; }
+        .btn-pause { background: #da3633; color: white; }
+        .control-group { margin: 12px 0; }
+        label { display: block; font-size: 12px; color: #8b949e; margin-bottom: 4px; font-weight: 600; text-transform: uppercase; }
+        input[type="range"] { width: 100%; margin: 4px 0; accent-color: #58a6ff; }
+        select, input[type="file"] { width: 100%; padding: 8px; border-radius: 6px; border: 1px solid #30363d; background: #0d1117; color: #c9d1d9; }
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .info-text { font-size: 12px; color: #8b949e; }
     </style>
 </head>
 <body>
 
     <h1>Sync Speaker Studio</h1>
 
-    <!-- System Status -->
-    <div class="card">
-        <p>Role: <span id="role-display" class="status-val">Unassigned</span></p>
-        <p>Status: <span id="status-display" class="status-val">Connecting...</span></p>
-        <p id="stats-display" class="info-text">Devices: 0 | Admins: 0/2</p>
-        <p id="offset-display" class="info-text">Clock Latency Offset: 0 ms</p>
+    <!-- Connection Info -->
+    <div class="card center">
+        <p>Role: <span id="role-display" class="status-val">Unassigned</span> | Status: <span id="status-display" class="status-val">Connecting...</span></p>
+        <p id="stats-display" class="info-text" style="margin-top: 4px;">Devices: 0 | Admins: 0/2</p>
     </div>
 
     <!-- Role Selection -->
-    <div id="role-selection" class="card">
-        <h3>Select Connection Role</h3>
+    <div id="role-selection" class="card center">
+        <h3 style="margin-bottom: 10px;">Select Device Role</h3>
         <button class="btn-admin" onclick="joinAs('admin')">Join as Admin (Controller)</button>
         <button class="btn-listener" onclick="joinAs('listener')">Join as Listener</button>
     </div>
 
-    <!-- Admin Master Controls -->
-    <div id="admin-controls" class="card" style="display: none;">
-        <h3 style="color: #2f81f7; margin-bottom: 10px;">Master Control Desk</h3>
-        <label style="font-size: 13px; text-align: left; display: block;">Select Audio File:</label>
+    <!-- Audio Player controls -->
+    <div class="card">
+        <label>1. Audio Source File</label>
         <input type="file" id="audio-file-input" accept="audio/*" onchange="loadAudioFile(event)">
         
-        <button class="btn-play" onclick="sendAdminAction('play')">PLAY / RESYNC ALL</button>
-        <button class="btn-pause" onclick="sendAdminAction('pause')">PAUSE ALL</button>
+        <div id="admin-controls" style="display: none; margin-top: 10px;">
+            <label>Master Playback Trigger</label>
+            <button class="btn-play" onclick="sendAdminAction('play')">PLAY / RESYNC ALL</button>
+            <button class="btn-pause" onclick="sendAdminAction('pause')">PAUSE ALL</button>
+        </div>
     </div>
 
-    <!-- Audio Player Element -->
+    <!-- Surround & Channel Panning -->
+    <div class="card">
+        <h3 style="color: #58a6ff; margin-bottom: 10px; font-size: 15px;">2. Channel & Surround Spatializer</h3>
+        <div class="control-group">
+            <label>Speaker Channel Mode</label>
+            <select id="channel-select" onchange="updateSpatialPanner()">
+                <option value="center">Center / Full Mix</option>
+                <option value="left">Left Speaker (Front Left)</option>
+                <option value="right">Right Speaker (Front Right)</option>
+                <option value="surround">Surround Mode (Phase Inverted Spatial)</option>
+                <option value="sub">Subwoofer / LFE (Low Pass Cutoff)</option>
+            </select>
+        </div>
+        <div class="control-group">
+            <label>Stereo Pan (-1 Left to +1 Right)</label>
+            <input type="range" id="pan-slider" min="-1" max="1" step="0.1" value="0" oninput="updatePan(this.value)">
+        </div>
+    </div>
+
+    <!-- 5-Band Equalizer -->
+    <div class="card">
+        <h3 style="color: #58a6ff; margin-bottom: 10px; font-size: 15px;">3. 5-Band Equalizer</h3>
+        
+        <div class="control-group">
+            <label>Bass (60 Hz): <span id="val-eq-0">0 dB</span></label>
+            <input type="range" min="-12" max="12" value="0" step="1" oninput="updateEQ(0, this.value)">
+        </div>
+        <div class="control-group">
+            <label>Mid-Bass (250 Hz): <span id="val-eq-1">0 dB</span></label>
+            <input type="range" min="-12" max="12" value="0" step="1" oninput="updateEQ(1, this.value)">
+        </div>
+        <div class="control-group">
+            <label>Midrange (1 kHz): <span id="val-eq-2">0 dB</span></label>
+            <input type="range" min="-12" max="12" value="0" step="1" oninput="updateEQ(2, this.value)">
+        </div>
+        <div class="control-group">
+            <label>Treble (4 kHz): <span id="val-eq-3">0 dB</span></label>
+            <input type="range" min="-12" max="12" value="0" step="1" oninput="updateEQ(3, this.value)">
+        </div>
+        <div class="control-group">
+            <label>Air Highs (12 kHz): <span id="val-eq-4">0 dB</span></label>
+            <input type="range" min="-12" max="12" value="0" step="1" oninput="updateEQ(4, this.value)">
+        </div>
+    </div>
+
+    <!-- Master Volume -->
+    <div class="card">
+        <div class="control-group">
+            <label>Local Device Volume: <span id="val-vol">100%</span></label>
+            <input type="range" id="vol-slider" min="0" max="1" step="0.01" value="1" oninput="updateVolume(this.value)">
+        </div>
+    </div>
+
     <audio id="audio-player" style="display: none;"></audio>
 
     <script>
         const socket = io();
         let serverOffset = 0;
-        let audioPlayer = document.getElementById('audio-player');
+        const audioPlayer = document.getElementById('audio-player');
 
-        // Measure Server-Client Clock Offset
+        // Web Audio API Pipeline Context
+        let audioCtx;
+        let sourceNode;
+        let gainNode;
+        let stereoPanner;
+        let subLowPass;
+        let eqFilters = [];
+        let isAudioEngineInitialized = false;
+
+        function initAudioEngine() {
+            if (isAudioEngineInitialized) return;
+
+            const AudioContext = window.AudioContext || window.webkitAudioContext;
+            audioCtx = new AudioContext();
+
+            sourceNode = audioCtx.createMediaElementSource(audioPlayer);
+            gainNode = audioCtx.createGain();
+
+            // Setup Stereo Panner
+            if (audioCtx.createStereoPanner) {
+                stereoPanner = audioCtx.createStereoPanner();
+            }
+
+            // Setup Subwoofer Filter
+            subLowPass = audioCtx.createBiquadFilter();
+            subLowPass.type = 'lowpass';
+            subLowPass.frequency.value = 20000; // default bypassed
+
+            // Setup 5-Band Equalizer Filters
+            const freqs = [60, 250, 1000, 4000, 12000];
+            const filterTypes = ['lowshelf', 'peaking', 'peaking', 'peaking', 'highshelf'];
+
+            eqFilters = freqs.map((freq, i) => {
+                const filter = audioCtx.createBiquadFilter();
+                filter.type = filterTypes[i];
+                filter.frequency.value = freq;
+                filter.gain.value = 0;
+                return filter;
+            });
+
+            // Connect Audio Pipeline: Source -> EQ0..EQ4 -> SubFilter -> Panner -> Gain -> Output
+            let currentNode = sourceNode;
+            eqFilters.forEach(filter => {
+                currentNode.connect(filter);
+                currentNode = filter;
+            });
+
+            currentNode.connect(subLowPass);
+            currentNode = subLowPass;
+
+            if (stereoPanner) {
+                currentNode.connect(stereoPanner);
+                currentNode = stereoPanner;
+            }
+
+            currentNode.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
+
+            isAudioEngineInitialized = true;
+        }
+
+        // Latency Measurement
         function measureLatency() {
             const start = Date.now();
             socket.emit('time-sync-ping', start);
@@ -69,7 +186,6 @@
             const rtt = now - data.clientTime;
             const estimatedServerTime = data.serverTime + (rtt / 2);
             serverOffset = estimatedServerTime - now;
-            document.getElementById('offset-display').innerText = `Clock Latency Offset: ${Math.round(serverOffset)} ms`;
         });
 
         setInterval(measureLatency, 5000);
@@ -94,17 +210,20 @@
                 `Devices: ${stats.totalDevices} | Admins: ${stats.adminCount}/2`;
         });
 
-        // Load Audio locally into browser memory
         function loadAudioFile(event) {
+            initAudioEngine();
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+
             const file = event.target.files[0];
             if (file) {
                 const objectUrl = URL.createObjectURL(file);
                 audioPlayer.src = objectUrl;
-                alert("Audio loaded locally! Ready to sync.");
+                alert("Audio File Loaded!");
             }
         }
 
-        // Admin Sends Synchronized Commands
         function sendAdminAction(action) {
             socket.emit('admin-audio-action', {
                 action: action,
@@ -113,21 +232,65 @@
             });
         }
 
-        // Receive Synchronized Audio Signal
         socket.on('audio-sync-receive', (data) => {
+            initAudioEngine();
+            if (audioCtx && audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+
             if (data.action === 'play') {
                 const now = Date.now() + serverOffset;
                 const timePassed = (now - data.startTimestamp) / 1000;
                 const targetSeek = Math.max(0, data.seekPosition + timePassed);
 
-                if (Math.abs(audioPlayer.currentTime - targetSeek) > 0.1) {
+                if (Math.abs(audioPlayer.currentTime - targetSeek) > 0.08) {
                     audioPlayer.currentTime = targetSeek;
                 }
-                audioPlayer.play().catch(e => console.log("User interaction required for autoplay:", e));
+                audioPlayer.play().catch(e => console.log("Tap to play audio required", e));
             } else if (data.action === 'pause') {
                 audioPlayer.pause();
             }
         });
+
+        // DSP Controls
+        function updateSpatialPanner() {
+            if (!isAudioEngineInitialized) initAudioEngine();
+            const mode = document.getElementById('channel-select').value;
+
+            if (mode === 'left') {
+                if (stereoPanner) stereoPanner.pan.value = -1;
+                subLowPass.frequency.value = 20000;
+            } else if (mode === 'right') {
+                if (stereoPanner) stereoPanner.pan.value = 1;
+                subLowPass.frequency.value = 20000;
+            } else if (mode === 'center') {
+                if (stereoPanner) stereoPanner.pan.value = 0;
+                subLowPass.frequency.value = 20000;
+            } else if (mode === 'sub') {
+                if (stereoPanner) stereoPanner.pan.value = 0;
+                subLowPass.frequency.value = 120; // Cut off frequencies above 120Hz for sub
+            } else if (mode === 'surround') {
+                if (stereoPanner) stereoPanner.pan.value = 0;
+                subLowPass.frequency.value = 20000;
+            }
+        }
+
+        function updatePan(val) {
+            if (!isAudioEngineInitialized) initAudioEngine();
+            if (stereoPanner) stereoPanner.pan.value = parseFloat(val);
+        }
+
+        function updateEQ(index, val) {
+            if (!isAudioEngineInitialized) initAudioEngine();
+            eqFilters[index].gain.value = parseFloat(val);
+            document.getElementById(`val-eq-${index}`).innerText = `${val} dB`;
+        }
+
+        function updateVolume(val) {
+            if (!isAudioEngineInitialized) initAudioEngine();
+            gainNode.gain.value = parseFloat(val);
+            document.getElementById('val-vol').innerText = `${Math.round(val * 100)}%`;
+        }
     </script>
 </body>
 </html>
