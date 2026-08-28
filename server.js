@@ -9,22 +9,17 @@ const io = new Server(server, {
     cors: { origin: "*", methods: ["GET", "POST"] }
 });
 
-// Serve static files from root directory or public folder
 app.use(express.static(__dirname));
 app.use(express.static(path.join(__dirname, 'public')));
 
 let connectedAdmins = new Set();
 let currentPlaybackState = {
     isPlaying: false,
-    audioUrl: null,
     startTimestamp: 0,
     seekPosition: 0
 };
 
 io.on('connection', (socket) => {
-    console.log(`[Connected] Device ID: ${socket.id}`);
-
-    // Role Registration (Max 2 Admins)
     socket.on('register-role', (requestedRole) => {
         if (requestedRole === 'admin') {
             if (connectedAdmins.size < 2) {
@@ -43,7 +38,6 @@ io.on('connection', (socket) => {
             socket.emit('role-assigned', { role: 'listener' });
         }
 
-        // Send current playback state to new connections
         socket.emit('sync-state', currentPlaybackState);
 
         io.emit('stats-update', {
@@ -52,7 +46,6 @@ io.on('connection', (socket) => {
         });
     });
 
-    // Time Synchronization Ping-Pong for Drift Calculation
     socket.on('time-sync-ping', (clientTime) => {
         socket.emit('time-sync-pong', {
             clientTime: clientTime,
@@ -60,28 +53,23 @@ io.on('connection', (socket) => {
         });
     });
 
-    // Master Audio Control Actions (Admin Only)
     socket.on('admin-audio-action', (data) => {
         if (socket.role !== 'admin') return;
 
         currentPlaybackState = {
             isPlaying: data.action === 'play',
-            audioUrl: data.audioUrl || currentPlaybackState.audioUrl,
             startTimestamp: data.timestamp || Date.now(),
             seekPosition: data.seekPosition || 0
         };
 
-        // Broadcast sync signal to all listeners and other admin
         io.emit('audio-sync-receive', {
             action: data.action,
-            audioUrl: currentPlaybackState.audioUrl,
             startTimestamp: currentPlaybackState.startTimestamp,
             seekPosition: currentPlaybackState.seekPosition,
             serverTime: Date.now()
         });
     });
 
-    // Handle Disconnects
     socket.on('disconnect', () => {
         if (socket.role === 'admin') {
             connectedAdmins.delete(socket.id);
