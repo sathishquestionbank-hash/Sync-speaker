@@ -5,9 +5,7 @@ const path = require('path');
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, {
-    cors: { origin: "*", methods: ["GET", "POST"] }
-});
+const io = new Server(server, { cors: { origin: "*", methods: ["GET", "POST"] } });
 
 const DEFAULT_ADMIN_PASS = "1234";
 const DEFAULT_LISTEN_PASS = "listenpass";
@@ -43,17 +41,13 @@ function getOrCreateRoom(roomId) {
 
 function getDeviceList(room) {
     const list = [];
-    room.devicesMap.forEach((info, id) => {
-        list.push({ id, ...info });
-    });
+    room.devicesMap.forEach((info, id) => list.push({ id, ...info }));
     return list;
 }
 
 function broadcastDeviceList(roomId) {
     const room = rooms.get(roomId);
-    if (room) {
-        io.to(roomId).emit('device-list-update', getDeviceList(room));
-    }
+    if (room) io.to(roomId).emit('device-list-update', getDeviceList(room));
 }
 
 function broadcastPlaylist(roomId) {
@@ -73,55 +67,41 @@ io.on('connection', (socket) => {
     socket.on('register-role', (data) => {
         currentRoomId = data.roomId || 'MainStudio';
         const room = getOrCreateRoom(currentRoomId);
-        
         const requestedRole = data.role;
         const passwordInput = data.password || '';
 
         if (requestedRole === 'admin') {
             if (passwordInput !== room.adminPassword) {
-                socket.emit('role-assigned', { 
-                    success: false, 
-                    message: 'Admin Authentication Failed: Incorrect Password' 
-                });
+                socket.emit('role-assigned', { success: false, message: 'Admin Auth Failed' });
                 return;
             }
-
             if (room.connectedAdmins.size < 2) {
                 room.connectedAdmins.add(socket.id);
                 socket.role = 'admin';
-                socket.roomId = currentRoomId;
-                socket.join(currentRoomId);
             } else {
                 socket.role = 'listener';
-                socket.roomId = currentRoomId;
-                socket.join(currentRoomId);
-                socket.emit('role-assigned', { 
-                    success: true, 
-                    role: 'listener', 
-                    message: 'Admin slots full. Connected as Listener.' 
-                });
-                return;
+                socket.emit('role-assigned', { success: true, role: 'listener', message: 'Admin full, joined as listener' });
             }
         } else {
             if (passwordInput !== room.listenerPassword) {
-                socket.emit('role-assigned', { 
-                    success: false, 
-                    message: 'Listener Access Failed: Incorrect Password' 
-                });
+                socket.emit('role-assigned', { success: false, message: 'Listener Auth Failed' });
                 return;
             }
-
             socket.role = 'listener';
-            socket.roomId = currentRoomId;
-            socket.join(currentRoomId);
         }
+
+        socket.roomId = currentRoomId;
+        socket.join(currentRoomId);
 
         room.devicesMap.set(socket.id, {
             role: socket.role,
             latency: 0,
             channel: 'center',
+            zone: 'Main Hall',
             volume: 1.0,
             isMuted: false,
+            posX: 0,
+            posY: -1,
             eq: { bass: 0, mid: 0, treble: 0 },
             spectrumData: new Array(16).fill(0)
         });
@@ -152,11 +132,62 @@ io.on('connection', (socket) => {
         const room = rooms.get(socket.roomId);
         if (room && room.devicesMap.has(socket.id)) {
             room.devicesMap.get(socket.id).spectrumData = dataArray;
-            io.to(socket.roomId).emit('spectrum-stream-broadcast', {
-                id: socket.id,
-                spectrumData: dataArray
-            });
+            io.to(socket.roomId).emit('spectrum-stream-broadcast', { id: socket.id, spectrumData: dataArray });
         }
+    });
+
+    // 2D Spatial Positioning Updates
+    socket.on('admin-update-node-position', (data) => {
+        if (socket.role !== 'admin' || !socket.roomId) return;
+        const room = rooms.get(socket.roomId);
+        if (!room) return;
+
+        const dev = room.devicesMap.get(data.targetDeviceId);
+        if (dev) {
+            dev.posX = data.x;
+            dev.posY = data.y;
+            io.to(data.targetDeviceId).emit('apply-spatial-position', { x: data.x, y: data.y });
+            broadcastDeviceList(socket.roomId);
+        }
+    });
+
+    // Zone & DSP Controls
+    socket.on('admin-target-device-dsp', (data) => {
+        if (socket.role !== 'admin' || !socket.roomId) return;
+        const room = rooms.get(socket.roomId);
+        if (!room) return;
+
+        const dev = room.devicesMap.get(data.targetDeviceId);
+        if (dev) {
+            if (data.channel !== undefined) dev.channel = data.channel;
+            if (data.zone !== undefined) dev.zone = data.zone;
+            if (data.volume !== undefined) dev.volume = data.volume;
+            if (data.isMuted !== undefined) dev.isMuted = data.isMuted;
+            if (data.eq !== undefined) {
+                if (data.eq.bass !== undefined) dev.eq.bass = data.eq.bass;
+                if (data.eq.mid !== undefined) dev.eq.mid = data.eq.mid;
+                if (data.eq.treble !== undefined) dev.eq.treble = data.eq.treble;
+            }
+
+            io.to(data.targetDeviceId).emit('apply-custom-dsp', {
+                channel: dev.channel,
+                volume: dev.volume,
+                isMuted: dev.isMuted,
+                eq: dev.eq
+            });
+            broadcastDeviceList(socket.roomId);
+        }
+    });
+
+    // Live Mic Paging Broadcasts
+    socket.on('admin-mic-stream', (audioChunk) => {
+        if (socket.role !== 'admin' || !socket.roomId) return;
+        socket.to(socket.roomId).emit('listener-receive-mic', audioChunk);
+    });
+
+    socket.on('admin-mic-state', (isSpeaking) => {
+        if (socket.role !== 'admin' || !socket.roomId) return;
+        socket.to(socket.roomId).emit('listener-mic-ducking', isSpeaking);
     });
 
     // Playlist Controls
@@ -164,35 +195,8 @@ io.on('connection', (socket) => {
         if (socket.role !== 'admin' || !socket.roomId) return;
         const room = rooms.get(socket.roomId);
         if (!room) return;
-
         tracks.forEach(track => room.playlist.push(track));
-
-        if (room.currentTrackIndex === -1 && room.playlist.length > 0) {
-            room.currentTrackIndex = 0;
-        }
-
-        broadcastPlaylist(socket.roomId);
-    });
-
-    socket.on('admin-remove-playlist-item', (index) => {
-        if (socket.role !== 'admin' || !socket.roomId) return;
-        const room = rooms.get(socket.roomId);
-        if (!room || index < 0 || index >= room.playlist.length) return;
-
-        room.playlist.splice(index, 1);
-        if (room.currentTrackIndex >= room.playlist.length) {
-            room.currentTrackIndex = room.playlist.length - 1;
-        }
-
-        broadcastPlaylist(socket.roomId);
-    });
-
-    socket.on('admin-toggle-repeat', () => {
-        if (socket.role !== 'admin' || !socket.roomId) return;
-        const room = rooms.get(socket.roomId);
-        if (!room) return;
-
-        room.isRepeat = !room.isRepeat;
+        if (room.currentTrackIndex === -1 && room.playlist.length > 0) room.currentTrackIndex = 0;
         broadcastPlaylist(socket.roomId);
     });
 
@@ -203,7 +207,6 @@ io.on('connection', (socket) => {
 
         room.currentTrackIndex = index;
         const track = room.playlist[index];
-
         room.currentPlaybackState = {
             isPlaying: true,
             startTimestamp: Date.now(),
@@ -214,7 +217,6 @@ io.on('connection', (socket) => {
         };
 
         broadcastPlaylist(socket.roomId);
-        
         io.to(socket.roomId).emit('audio-sync-receive', {
             action: 'play-track-index',
             index: index,
@@ -224,94 +226,6 @@ io.on('connection', (socket) => {
             trackName: track.name,
             serverTime: Date.now()
         });
-    });
-
-    socket.on('track-ended-auto-next', () => {
-        if (socket.role !== 'admin' || !socket.roomId) return;
-        const room = rooms.get(socket.roomId);
-        if (!room) return;
-
-        let nextIdx = room.currentTrackIndex + 1;
-        if (nextIdx >= room.playlist.length && room.isRepeat) {
-            nextIdx = 0;
-        }
-
-        if (nextIdx < room.playlist.length) {
-            room.currentTrackIndex = nextIdx;
-            const nextTrack = room.playlist[nextIdx];
-
-            room.currentPlaybackState = {
-                isPlaying: true,
-                startTimestamp: Date.now(),
-                seekPosition: 0,
-                playbackRate: room.currentPlaybackState.playbackRate || 1.0,
-                currentTrackName: nextTrack.name,
-                duration: nextTrack.duration
-            };
-
-            broadcastPlaylist(socket.roomId);
-
-            io.to(socket.roomId).emit('audio-sync-receive', {
-                action: 'play-track-index',
-                index: room.currentTrackIndex,
-                startTimestamp: room.currentPlaybackState.startTimestamp,
-                seekPosition: 0,
-                playbackRate: room.currentPlaybackState.playbackRate,
-                trackName: nextTrack.name,
-                serverTime: Date.now()
-            });
-        }
-    });
-
-    // Independent Per-Device DSP Controls
-    socket.on('admin-target-device-dsp', (data) => {
-        if (socket.role !== 'admin' || !socket.roomId) return;
-        const room = rooms.get(socket.roomId);
-        if (!room) return;
-
-        const { targetDeviceId, channel, volume, isMuted, eq } = data;
-        const dev = room.devicesMap.get(targetDeviceId);
-
-        if (dev) {
-            if (channel !== undefined) dev.channel = channel;
-            if (volume !== undefined) dev.volume = volume;
-            if (isMuted !== undefined) dev.isMuted = isMuted;
-            if (eq !== undefined) {
-                if (eq.bass !== undefined) dev.eq.bass = eq.bass;
-                if (eq.mid !== undefined) dev.eq.mid = eq.mid;
-                if (eq.treble !== undefined) dev.eq.treble = eq.treble;
-            }
-
-            io.to(targetDeviceId).emit('apply-custom-dsp', {
-                channel: dev.channel,
-                volume: dev.volume,
-                isMuted: dev.isMuted,
-                eq: dev.eq
-            });
-
-            broadcastDeviceList(socket.roomId);
-        }
-    });
-
-    socket.on('admin-global-mute', (shouldMute) => {
-        if (socket.role !== 'admin' || !socket.roomId) return;
-        const room = rooms.get(socket.roomId);
-        if (!room) return;
-
-        room.devicesMap.forEach((dev, id) => {
-            dev.isMuted = shouldMute;
-            io.to(id).emit('apply-custom-dsp', { isMuted: shouldMute });
-        });
-        broadcastDeviceList(socket.roomId);
-    });
-
-    socket.on('admin-toggle-auto-pan', (panSettings) => {
-        if (socket.role !== 'admin' || !socket.roomId) return;
-        const room = rooms.get(socket.roomId);
-        if (!room) return;
-
-        room.autoPan = panSettings;
-        io.to(socket.roomId).emit('auto-pan-state-update', room.autoPan);
     });
 
     socket.on('admin-audio-action', (data) => {
@@ -352,6 +266,4 @@ io.on('connection', (socket) => {
 });
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, '0.0.0.0', () => {
-    console.log(`Sync Speaker Studio server listening on port ${PORT}`);
-});
+server.listen(PORT, '0.0.0.0', () => console.log(`Sync Speaker Studio operating on port ${PORT}`));
