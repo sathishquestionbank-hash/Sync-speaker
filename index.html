@@ -3,13 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sync Speaker Studio - Dynamic Lighting</title>
+    <title>Sync Speaker Studio</title>
     <script src="/socket.io/socket.io.js"></script>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0b0e14; color: #c9d1d9; text-align: center; padding: 15px; transition: background 0.3s ease; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0b0e14; color: #c9d1d9; text-align: center; padding: 15px; }
         h1 { margin: 10px 0; color: #58a6ff; font-size: 22px; }
-        .card { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 15px; margin: 12px auto; max-width: 480px; text-align: left; position: relative; z-index: 2; }
+        .card { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 15px; margin: 12px auto; max-width: 480px; text-align: left; }
         .center { text-align: center; }
         .status-val { font-weight: bold; color: #f2cc60; }
         .error-msg { color: #f85149; font-weight: bold; font-size: 13px; margin-top: 6px; display: none; }
@@ -18,38 +18,38 @@
         .btn-listener { background: #1f6feb; color: white; }
         .btn-play { background: #238636; color: white; margin-top: 8px; font-size: 16px; }
         .btn-pause { background: #da3633; color: white; font-size: 16px; }
+        .btn-secondary { background: #21262d; color: #c9d1d9; border: 1px solid #30363d; }
         .control-group { margin: 12px 0; }
         label { display: block; font-size: 12px; color: #8b949e; margin-bottom: 4px; font-weight: 600; text-transform: uppercase; }
         input[type="range"] { width: 100%; margin: 4px 0; accent-color: #58a6ff; }
-        input[type="password"], select, input[type="file"] { width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #30363d; background: #0d1117; color: #c9d1d9; margin-bottom: 8px; }
+        input[type="password"], input[type="text"], select, input[type="file"] { width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #30363d; background: #0d1117; color: #c9d1d9; margin-bottom: 8px; }
         .info-text { font-size: 12px; color: #8b949e; }
         
-        /* Audio Reactive Lighting Canvas */
         #visualizer-canvas {
             display: block;
             margin: 0 auto 10px auto;
             border-radius: 50%;
             background: rgba(13, 17, 23, 0.8);
             box-shadow: 0 0 20px rgba(88, 166, 255, 0.2);
-            transition: box-shadow 0.1s ease;
         }
+        #yt-player-container { display: none; }
     </style>
 </head>
 <body>
 
     <h1>Sync Speaker Studio</h1>
 
-    <!-- Audio-Reactive Visual Lighting Indicator -->
-    <canvas id="visualizer-canvas" width="140" height="140"></canvas>
+    <!-- Audio Reactive Visualizer -->
+    <canvas id="visualizer-canvas" width="130" height="130"></canvas>
 
-    <!-- Network & Status Info -->
+    <!-- Network Info -->
     <div class="card center">
         <p>Role: <span id="role-display" class="status-val">Unassigned</span> | Status: <span id="status-display" class="status-val">Connecting...</span></p>
         <p id="stats-display" class="info-text" style="margin-top: 4px;">Devices: 0 | Admins: 0/2</p>
         <p id="latency-display" class="info-text">Latency Offset: 0 ms</p>
     </div>
 
-    <!-- Role Selection & Password Box -->
+    <!-- Role Selection -->
     <div id="role-selection" class="card center">
         <h3 style="margin-bottom: 12px;">Select Device Role</h3>
         
@@ -65,21 +65,29 @@
         <button class="btn-listener" onclick="joinAs('listener')">Join as Listener</button>
     </div>
 
-    <!-- Audio Player & Song Controls -->
-    <div class="card">
-        <h3 style="color: #58a6ff; margin-bottom: 10px; font-size: 15px;">Audio Track Source</h3>
-        <input type="file" id="audio-file-input" accept="audio/*" onchange="loadAudioFile(event)">
+    <!-- Admin Only: Song Selection & Controls -->
+    <div id="admin-media-card" class="card" style="display: none;">
+        <h3 style="color: #58a6ff; margin-bottom: 10px; font-size: 15px;">Admin Master Music Source</h3>
         
-        <div id="admin-controls" style="display: none; margin-top: 10px;">
-            <label>Master Playback Trigger</label>
+        <label>Option A: Local Audio Upload</label>
+        <input type="file" id="audio-file-input" accept="audio/*" onchange="loadLocalAudioFile(event)">
+
+        <hr style="border-color: #30363d; margin: 12px 0;">
+
+        <label>Option B: YouTube Video URL or Video ID</label>
+        <input type="text" id="yt-url-input" placeholder="e.g. https://www.youtube.com/watch?v=dQw4w9WgXcQ">
+        <button class="btn-secondary" onclick="loadYouTubeSong()">Load YouTube Song</button>
+
+        <div style="margin-top: 12px;">
+            <label>Master Sync Actions</label>
             <button class="btn-play" onclick="sendAdminAction('play')">PLAY / RESYNC ALL DEVICES</button>
             <button class="btn-pause" onclick="sendAdminAction('pause')">PAUSE ALL DEVICES</button>
         </div>
     </div>
 
-    <!-- Spatial & Speaker Mode -->
-    <div class="card">
-        <h3 style="color: #58a6ff; margin-bottom: 10px; font-size: 15px;">Speaker Output Configuration</h3>
+    <!-- Admin Only: Spatial Surround Panner -->
+    <div id="admin-surround-card" class="card" style="display: none;">
+        <h3 style="color: #58a6ff; margin-bottom: 10px; font-size: 15px;">Admin Surround & Channel Mode</h3>
         <div class="control-group">
             <label>Speaker Channel Mode</label>
             <select id="channel-select" onchange="updateSpatialPanner()">
@@ -95,21 +103,27 @@
         </div>
     </div>
 
-    <!-- Master Volume -->
+    <!-- Available to Everyone: Local Speaker Volume -->
     <div class="card">
         <div class="control-group">
-            <label>Local Speaker Volume: <span id="val-vol">100%</span></label>
+            <label>Local Device Volume: <span id="val-vol">100%</span></label>
             <input type="range" id="vol-slider" min="0" max="1" step="0.01" value="1" oninput="updateVolume(this.value)">
         </div>
     </div>
 
+    <!-- Audio & YouTube Embed Containers -->
     <audio id="audio-player" style="display: none;"></audio>
+    <div id="yt-player-container"><div id="yt-player"></div></div>
 
     <script>
         const socket = io();
         let serverOffset = 0;
+        let currentRole = 'unassigned';
+        let currentSourceType = 'local'; // 'local' or 'youtube'
+
         const audioPlayer = document.getElementById('audio-player');
 
+        // Web Audio API DSP Nodes
         let audioCtx;
         let sourceNode;
         let gainNode;
@@ -118,9 +132,31 @@
         let analyserNode;
         let isAudioEngineInitialized = false;
 
+        // YouTube IFrame Player instance
+        let ytPlayer;
+        let isYtApiReady = false;
+
         // Visualizer Canvas Setup
         const canvas = document.getElementById('visualizer-canvas');
         const canvasCtx = canvas.getContext('2d');
+
+        // Load YouTube Iframe API
+        const tag = document.createElement('script');
+        tag.src = "https://www.youtube.com/iframe_api";
+        const firstScriptTag = document.getElementsByTagName('script')[0];
+        firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
+
+        function onYouTubeIframeAPIReady() {
+            ytPlayer = new YT.Player('yt-player', {
+                height: '0',
+                width: '0',
+                videoId: '',
+                playerVars: { 'autoplay': 0, 'controls': 0 },
+                events: {
+                    'onReady': () => { isYtApiReady = true; }
+                }
+            });
+        }
 
         function initAudioEngine() {
             if (isAudioEngineInitialized) return;
@@ -131,7 +167,6 @@
             sourceNode = audioCtx.createMediaElementSource(audioPlayer);
             gainNode = audioCtx.createGain();
 
-            // Lighting & Spectrum Analyzer
             analyserNode = audioCtx.createAnalyser();
             analyserNode.fftSize = 64;
 
@@ -143,7 +178,6 @@
             subLowPass.type = 'lowpass';
             subLowPass.frequency.value = 20000;
 
-            // Chain setup: Source -> Analyser -> Sub -> Panner -> Gain -> Destination
             let currentNode = sourceNode;
             currentNode.connect(analyserNode);
             currentNode = analyserNode;
@@ -175,43 +209,20 @@
 
             const centerX = canvas.width / 2;
             const centerY = canvas.height / 2;
-            const radius = 35;
+            const radius = 30;
 
-            // Calculate average bass frequency
             let sum = 0;
-            for (let i = 0; i < 8; i++) {
-                sum += dataArray[i];
-            }
+            for (let i = 0; i < 8; i++) sum += dataArray[i];
             let bassAvg = sum / 8;
-            let glowIntensity = Math.min(60, bassAvg / 2.5);
+            let glowIntensity = Math.min(50, bassAvg / 2.5);
 
-            // Dynamic glow effect on the canvas element
-            canvas.style.boxShadow = `0 0 ${20 + glowIntensity}px rgba(88, 166, 255, ${0.3 + (glowIntensity / 70)})`;
+            canvas.style.boxShadow = `0 0 ${15 + glowIntensity}px rgba(88, 166, 255, ${0.3 + (glowIntensity / 70)})`;
 
-            // Draw Pulsing Circle Ring
             canvasCtx.beginPath();
             canvasCtx.arc(centerX, centerY, radius + (bassAvg / 15), 0, 2 * Math.PI);
             canvasCtx.strokeStyle = `hsl(${190 + (bassAvg / 3)}, 80%, 60%)`;
-            canvasCtx.lineWidth = 4;
+            canvasCtx.lineWidth = 3;
             canvasCtx.stroke();
-
-            // Draw Frequency Spokes
-            for (let i = 0; i < bufferLength; i++) {
-                let angle = (i / bufferLength) * Math.PI * 2;
-                let barHeight = dataArray[i] / 8;
-
-                let x1 = centerX + Math.cos(angle) * (radius + 2);
-                let y1 = centerY + Math.sin(angle) * (radius + 2);
-                let x2 = centerX + Math.cos(angle) * (radius + 2 + barHeight);
-                let y2 = centerY + Math.sin(angle) * (radius + 2 + barHeight);
-
-                canvasCtx.beginPath();
-                canvasCtx.moveTo(x1, y1);
-                canvasCtx.lineTo(x2, y2);
-                canvasCtx.strokeStyle = `hsl(${200 + i * 5}, 100%, 70%)`;
-                canvasCtx.lineWidth = 2;
-                canvasCtx.stroke();
-            }
         }
 
         function measureLatency() {
@@ -245,13 +256,16 @@
                 return;
             }
 
+            currentRole = data.role;
             document.getElementById('role-display').innerText = data.role.toUpperCase();
             document.getElementById('status-display').innerText = 'Connected';
             document.getElementById('status-display').style.color = '#f2cc60';
             document.getElementById('role-selection').style.display = 'none';
 
+            // Show admin controls ONLY if authenticated as admin
             if (data.role === 'admin') {
-                document.getElementById('admin-controls').style.display = 'block';
+                document.getElementById('admin-media-card').style.display = 'block';
+                document.getElementById('admin-surround-card').style.display = 'block';
             }
             if (data.message) alert(data.message);
         });
@@ -261,49 +275,101 @@
                 `Devices: ${stats.totalDevices} | Admins: ${stats.adminCount}/2`;
         });
 
-        function loadAudioFile(event) {
+        function loadLocalAudioFile(event) {
+            if (currentRole !== 'admin') return;
             initAudioEngine();
-            if (audioCtx.state === 'suspended') {
-                audioCtx.resume();
-            }
+            if (audioCtx.state === 'suspended') audioCtx.resume();
 
             const file = event.target.files[0];
             if (file) {
+                currentSourceType = 'local';
                 const objectUrl = URL.createObjectURL(file);
                 audioPlayer.src = objectUrl;
-                alert("Audio file ready for playback!");
+                alert("Local audio file loaded into master engine!");
+            }
+        }
+
+        function extractYouTubeId(url) {
+            const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
+            const match = url.match(regExp);
+            return (match && match[2].length === 11) ? match[2] : url;
+        }
+
+        function loadYouTubeSong() {
+            if (currentRole !== 'admin') return;
+            const inputVal = document.getElementById('yt-url-input').value.trim();
+            if (!inputVal) return alert("Please enter a YouTube URL or ID");
+
+            const ytId = extractYouTubeId(inputVal);
+            currentSourceType = 'youtube';
+
+            if (isYtApiReady && ytPlayer) {
+                ytPlayer.cueVideoById(ytId);
+                alert(`YouTube Video ID (${ytId}) cued across cluster!`);
             }
         }
 
         function sendAdminAction(action) {
+            if (currentRole !== 'admin') return;
+
+            let currentSeek = 0;
+            let ytId = '';
+
+            if (currentSourceType === 'local') {
+                currentSeek = audioPlayer.currentTime || 0;
+            } else if (currentSourceType === 'youtube' && ytPlayer && ytPlayer.getCurrentTime) {
+                currentSeek = ytPlayer.getCurrentTime() || 0;
+                const inputVal = document.getElementById('yt-url-input').value.trim();
+                ytId = extractYouTubeId(inputVal);
+            }
+
             socket.emit('admin-audio-action', {
                 action: action,
+                sourceType: currentSourceType,
+                youtubeId: ytId,
                 timestamp: Date.now() + serverOffset,
-                seekPosition: audioPlayer.currentTime || 0
+                seekPosition: currentSeek
             });
         }
 
         socket.on('audio-sync-receive', (data) => {
-            initAudioEngine();
-            if (audioCtx && audioCtx.state === 'suspended') {
-                audioCtx.resume();
-            }
+            currentSourceType = data.sourceType || 'local';
 
-            if (data.action === 'play') {
-                const now = Date.now() + serverOffset;
-                const timePassed = (now - data.startTimestamp) / 1000;
-                const targetSeek = Math.max(0, data.seekPosition + timePassed);
+            if (currentSourceType === 'local') {
+                initAudioEngine();
+                if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+                if (ytPlayer && ytPlayer.pauseVideo) ytPlayer.pauseVideo();
 
-                if (Math.abs(audioPlayer.currentTime - targetSeek) > 0.08) {
-                    audioPlayer.currentTime = targetSeek;
+                if (data.action === 'play') {
+                    const now = Date.now() + serverOffset;
+                    const timePassed = (now - data.startTimestamp) / 1000;
+                    const targetSeek = Math.max(0, data.seekPosition + timePassed);
+
+                    if (Math.abs(audioPlayer.currentTime - targetSeek) > 0.08) {
+                        audioPlayer.currentTime = targetSeek;
+                    }
+                    audioPlayer.play().catch(e => console.log("Tap screen to grant sound permissions", e));
+                } else if (data.action === 'pause') {
+                    audioPlayer.pause();
                 }
-                audioPlayer.play().catch(e => console.log("Tap screen to allow sound playback", e));
-            } else if (data.action === 'pause') {
+            } else if (currentSourceType === 'youtube' && isYtApiReady && ytPlayer) {
                 audioPlayer.pause();
+
+                if (data.action === 'play') {
+                    const now = Date.now() + serverOffset;
+                    const timePassed = (now - data.startTimestamp) / 1000;
+                    const targetSeek = Math.max(0, data.seekPosition + timePassed);
+
+                    ytPlayer.loadVideoById(data.youtubeId, targetSeek);
+                    ytPlayer.playVideo();
+                } else if (data.action === 'pause') {
+                    ytPlayer.pauseVideo();
+                }
             }
         });
 
         function updateSpatialPanner() {
+            if (currentRole !== 'admin') return;
             if (!isAudioEngineInitialized) initAudioEngine();
             const mode = document.getElementById('channel-select').value;
 
@@ -323,13 +389,18 @@
         }
 
         function updatePan(val) {
+            if (currentRole !== 'admin') return;
             if (!isAudioEngineInitialized) initAudioEngine();
             if (stereoPanner) stereoPanner.pan.value = parseFloat(val);
         }
 
         function updateVolume(val) {
-            if (!isAudioEngineInitialized) initAudioEngine();
-            gainNode.gain.value = parseFloat(val);
+            if (currentSourceType === 'local') {
+                if (!isAudioEngineInitialized) initAudioEngine();
+                gainNode.gain.value = parseFloat(val);
+            } else if (currentSourceType === 'youtube' && ytPlayer && ytPlayer.setVolume) {
+                ytPlayer.setVolume(val * 100);
+            }
             document.getElementById('val-vol').innerText = `${Math.round(val * 100)}%`;
         }
     </script>
