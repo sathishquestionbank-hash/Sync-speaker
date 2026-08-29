@@ -3,15 +3,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sync Speaker Studio</title>
+    <title>Sync Speaker Studio - Dynamic Lighting</title>
     <script src="/socket.io/socket.io.js"></script>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0b0e14; color: #c9d1d9; text-align: center; padding: 15px; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0b0e14; color: #c9d1d9; text-align: center; padding: 15px; transition: background 0.3s ease; }
         h1 { margin: 10px 0; color: #58a6ff; font-size: 22px; }
-        .card { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 15px; margin: 12px auto; max-width: 480px; text-align: left; }
+        .card { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 15px; margin: 12px auto; max-width: 480px; text-align: left; position: relative; z-index: 2; }
         .center { text-align: center; }
         .status-val { font-weight: bold; color: #f2cc60; }
+        .error-msg { color: #f85149; font-weight: bold; font-size: 13px; margin-top: 6px; display: none; }
         button { padding: 12px 16px; margin: 6px 0; font-size: 14px; font-weight: bold; border: none; border-radius: 6px; cursor: pointer; width: 100%; }
         .btn-admin { background: #238636; color: white; }
         .btn-listener { background: #1f6feb; color: white; }
@@ -22,11 +23,24 @@
         input[type="range"] { width: 100%; margin: 4px 0; accent-color: #58a6ff; }
         input[type="password"], select, input[type="file"] { width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #30363d; background: #0d1117; color: #c9d1d9; margin-bottom: 8px; }
         .info-text { font-size: 12px; color: #8b949e; }
+        
+        /* Audio Reactive Lighting Canvas */
+        #visualizer-canvas {
+            display: block;
+            margin: 0 auto 10px auto;
+            border-radius: 50%;
+            background: rgba(13, 17, 23, 0.8);
+            box-shadow: 0 0 20px rgba(88, 166, 255, 0.2);
+            transition: box-shadow 0.1s ease;
+        }
     </style>
 </head>
 <body>
 
     <h1>Sync Speaker Studio</h1>
+
+    <!-- Audio-Reactive Visual Lighting Indicator -->
+    <canvas id="visualizer-canvas" width="140" height="140"></canvas>
 
     <!-- Network & Status Info -->
     <div class="card center">
@@ -39,10 +53,11 @@
     <div id="role-selection" class="card center">
         <h3 style="margin-bottom: 12px;">Select Device Role</h3>
         
-        <div style="margin-bottom: 15px;">
+        <div style="margin-bottom: 10px;">
             <label style="text-align: left;">Admin Passcode Required:</label>
             <input type="password" id="admin-passcode" placeholder="Enter Admin Password (Default: 1234)">
             <button class="btn-admin" onclick="joinAs('admin')">Login as Admin (Controller)</button>
+            <p id="auth-error-msg" class="error-msg">Authentication Failed: Incorrect Password</p>
         </div>
 
         <hr style="border-color: #30363d; margin: 15px 0;">
@@ -95,13 +110,17 @@
         let serverOffset = 0;
         const audioPlayer = document.getElementById('audio-player');
 
-        // Web Audio Nodes
         let audioCtx;
         let sourceNode;
         let gainNode;
         let stereoPanner;
         let subLowPass;
+        let analyserNode;
         let isAudioEngineInitialized = false;
+
+        // Visualizer Canvas Setup
+        const canvas = document.getElementById('visualizer-canvas');
+        const canvasCtx = canvas.getContext('2d');
 
         function initAudioEngine() {
             if (isAudioEngineInitialized) return;
@@ -112,6 +131,10 @@
             sourceNode = audioCtx.createMediaElementSource(audioPlayer);
             gainNode = audioCtx.createGain();
 
+            // Lighting & Spectrum Analyzer
+            analyserNode = audioCtx.createAnalyser();
+            analyserNode.fftSize = 64;
+
             if (audioCtx.createStereoPanner) {
                 stereoPanner = audioCtx.createStereoPanner();
             }
@@ -120,8 +143,11 @@
             subLowPass.type = 'lowpass';
             subLowPass.frequency.value = 20000;
 
-            // Pipeline: Source -> Sub Filter -> Panner -> Gain -> Destination
+            // Chain setup: Source -> Analyser -> Sub -> Panner -> Gain -> Destination
             let currentNode = sourceNode;
+            currentNode.connect(analyserNode);
+            currentNode = analyserNode;
+
             currentNode.connect(subLowPass);
             currentNode = subLowPass;
 
@@ -134,6 +160,58 @@
             gainNode.connect(audioCtx.destination);
 
             isAudioEngineInitialized = true;
+            renderLightingVisualizer();
+        }
+
+        function renderLightingVisualizer() {
+            requestAnimationFrame(renderLightingVisualizer);
+            if (!analyserNode) return;
+
+            const bufferLength = analyserNode.frequencyBinCount;
+            const dataArray = new Uint8Array(bufferLength);
+            analyserNode.getByteFrequencyData(dataArray);
+
+            canvasCtx.clearRect(0, 0, canvas.width, canvas.height);
+
+            const centerX = canvas.width / 2;
+            const centerY = canvas.height / 2;
+            const radius = 35;
+
+            // Calculate average bass frequency
+            let sum = 0;
+            for (let i = 0; i < 8; i++) {
+                sum += dataArray[i];
+            }
+            let bassAvg = sum / 8;
+            let glowIntensity = Math.min(60, bassAvg / 2.5);
+
+            // Dynamic glow effect on the canvas element
+            canvas.style.boxShadow = `0 0 ${20 + glowIntensity}px rgba(88, 166, 255, ${0.3 + (glowIntensity / 70)})`;
+
+            // Draw Pulsing Circle Ring
+            canvasCtx.beginPath();
+            canvasCtx.arc(centerX, centerY, radius + (bassAvg / 15), 0, 2 * Math.PI);
+            canvasCtx.strokeStyle = `hsl(${190 + (bassAvg / 3)}, 80%, 60%)`;
+            canvasCtx.lineWidth = 4;
+            canvasCtx.stroke();
+
+            // Draw Frequency Spokes
+            for (let i = 0; i < bufferLength; i++) {
+                let angle = (i / bufferLength) * Math.PI * 2;
+                let barHeight = dataArray[i] / 8;
+
+                let x1 = centerX + Math.cos(angle) * (radius + 2);
+                let y1 = centerY + Math.sin(angle) * (radius + 2);
+                let x2 = centerX + Math.cos(angle) * (radius + 2 + barHeight);
+                let y2 = centerY + Math.sin(angle) * (radius + 2 + barHeight);
+
+                canvasCtx.beginPath();
+                canvasCtx.moveTo(x1, y1);
+                canvasCtx.lineTo(x2, y2);
+                canvasCtx.strokeStyle = `hsl(${200 + i * 5}, 100%, 70%)`;
+                canvasCtx.lineWidth = 2;
+                canvasCtx.stroke();
+            }
         }
 
         function measureLatency() {
@@ -153,17 +231,23 @@
 
         function joinAs(role) {
             const password = document.getElementById('admin-passcode').value;
+            document.getElementById('auth-error-msg').style.display = 'none';
             socket.emit('register-role', { role: role, password: password });
         }
 
         socket.on('role-assigned', (data) => {
             if (!data.success) {
-                alert(data.message || 'Authentication Failed');
+                const errorEl = document.getElementById('auth-error-msg');
+                errorEl.innerText = data.message || 'Authentication Failed!';
+                errorEl.style.display = 'block';
+                document.getElementById('status-display').innerText = 'Authentication Failed';
+                document.getElementById('status-display').style.color = '#f85149';
                 return;
             }
 
             document.getElementById('role-display').innerText = data.role.toUpperCase();
             document.getElementById('status-display').innerText = 'Connected';
+            document.getElementById('status-display').style.color = '#f2cc60';
             document.getElementById('role-selection').style.display = 'none';
 
             if (data.role === 'admin') {
