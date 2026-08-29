@@ -15,7 +15,6 @@ const DEFAULT_LISTEN_PASS = "listenpass";
 app.use(express.static(__dirname));
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Multi-room session management state
 let rooms = new Map();
 
 function getOrCreateRoom(roomId) {
@@ -25,16 +24,16 @@ function getOrCreateRoom(roomId) {
             listenerPassword: DEFAULT_LISTEN_PASS,
             connectedAdmins: new Set(),
             devicesMap: new Map(),
-            trackQueue: [],
-            currentEqMode: 'flat',
-            sleepTimerData: { endTime: 0 },
+            playlist: [],
+            currentTrackIndex: -1,
+            isRepeat: false,
             autoPan: { enabled: false, speed: 1.0 },
             currentPlaybackState: {
                 isPlaying: false,
                 startTimestamp: 0,
                 seekPosition: 0,
                 playbackRate: 1.0,
-                currentTrackName: "No Track Loaded",
+                currentTrackName: "No Track Selected",
                 duration: 0
             }
         });
@@ -54,6 +53,17 @@ function broadcastDeviceList(roomId) {
     const room = rooms.get(roomId);
     if (room) {
         io.to(roomId).emit('device-list-update', getDeviceList(room));
+    }
+}
+
+function broadcastPlaylist(roomId) {
+    const room = rooms.get(roomId);
+    if (room) {
+        io.to(roomId).emit('playlist-update', {
+            playlist: room.playlist,
+            currentIndex: room.currentTrackIndex,
+            isRepeat: room.isRepeat
+        });
     }
 }
 
@@ -118,12 +128,10 @@ io.on('connection', (socket) => {
 
         socket.emit('role-assigned', { success: true, role: socket.role, roomId: currentRoomId });
         socket.emit('sync-state', room.currentPlaybackState);
-        socket.emit('update-song-list', room.trackQueue);
-        socket.emit('eq-update', room.currentEqMode);
-        socket.emit('sleep-timer-sync', room.sleepTimerData);
         socket.emit('auto-pan-state-update', room.autoPan);
-
+        
         broadcastDeviceList(currentRoomId);
+        broadcastPlaylist(currentRoomId);
     });
 
     socket.on('time-sync-ping', (clientTime) => {
@@ -139,7 +147,6 @@ io.on('connection', (socket) => {
         }
     });
 
-    // Spectrum Relay for Per-Device Visualizers in Admin View
     socket.on('device-spectrum-stream', (dataArray) => {
         if (!socket.roomId) return;
         const room = rooms.get(socket.roomId);
@@ -152,7 +159,111 @@ io.on('connection', (socket) => {
         }
     });
 
-    // Per-Device DSP Controls
+    // Playlist Controls
+    socket.on('admin-add-to-playlist', (tracks) => {
+        if (socket.role !== 'admin' || !socket.roomId) return;
+        const room = rooms.get(socket.roomId);
+        if (!room) return;
+
+        tracks.forEach(track => room.playlist.push(track));
+
+        if (room.currentTrackIndex === -1 && room.playlist.length > 0) {
+            room.currentTrackIndex = 0;
+        }
+
+        broadcastPlaylist(socket.roomId);
+    });
+
+    socket.on('admin-remove-playlist-item', (index) => {
+        if (socket.role !== 'admin' || !socket.roomId) return;
+        const room = rooms.get(socket.roomId);
+        if (!room || index < 0 || index >= room.playlist.length) return;
+
+        room.playlist.splice(index, 1);
+        if (room.currentTrackIndex >= room.playlist.length) {
+            room.currentTrackIndex = room.playlist.length - 1;
+        }
+
+        broadcastPlaylist(socket.roomId);
+    });
+
+    socket.on('admin-toggle-repeat', () => {
+        if (socket.role !== 'admin' || !socket.roomId) return;
+        const room = rooms.get(socket.roomId);
+        if (!room) return;
+
+        room.isRepeat = !room.isRepeat;
+        broadcastPlaylist(socket.roomId);
+    });
+
+    socket.on('admin-select-track', (index) => {
+        if (socket.role !== 'admin' || !socket.roomId) return;
+        const room = rooms.get(socket.roomId);
+        if (!room || index < 0 || index >= room.playlist.length) return;
+
+        room.currentTrackIndex = index;
+        const track = room.playlist[index];
+
+        room.currentPlaybackState = {
+            isPlaying: true,
+            startTimestamp: Date.now(),
+            seekPosition: 0,
+            playbackRate: room.currentPlaybackState.playbackRate || 1.0,
+            currentTrackName: track.name,
+            duration: track.duration
+        };
+
+        broadcastPlaylist(socket.roomId);
+        
+        io.to(socket.roomId).emit('audio-sync-receive', {
+            action: 'play-track-index',
+            index: index,
+            startTimestamp: room.currentPlaybackState.startTimestamp,
+            seekPosition: 0,
+            playbackRate: room.currentPlaybackState.playbackRate,
+            trackName: track.name,
+            serverTime: Date.now()
+        });
+    });
+
+    socket.on('track-ended-auto-next', () => {
+        if (socket.role !== 'admin' || !socket.roomId) return;
+        const room = rooms.get(socket.roomId);
+        if (!room) return;
+
+        let nextIdx = room.currentTrackIndex + 1;
+        if (nextIdx >= room.playlist.length && room.isRepeat) {
+            nextIdx = 0;
+        }
+
+        if (nextIdx < room.playlist.length) {
+            room.currentTrackIndex = nextIdx;
+            const nextTrack = room.playlist[nextIdx];
+
+            room.currentPlaybackState = {
+                isPlaying: true,
+                startTimestamp: Date.now(),
+                seekPosition: 0,
+                playbackRate: room.currentPlaybackState.playbackRate || 1.0,
+                currentTrackName: nextTrack.name,
+                duration: nextTrack.duration
+            };
+
+            broadcastPlaylist(socket.roomId);
+
+            io.to(socket.roomId).emit('audio-sync-receive', {
+                action: 'play-track-index',
+                index: room.currentTrackIndex,
+                startTimestamp: room.currentPlaybackState.startTimestamp,
+                seekPosition: 0,
+                playbackRate: room.currentPlaybackState.playbackRate,
+                trackName: nextTrack.name,
+                serverTime: Date.now()
+            });
+        }
+    });
+
+    // Independent Per-Device DSP Controls
     socket.on('admin-target-device-dsp', (data) => {
         if (socket.role !== 'admin' || !socket.roomId) return;
         const room = rooms.get(socket.roomId);
@@ -165,7 +276,11 @@ io.on('connection', (socket) => {
             if (channel !== undefined) dev.channel = channel;
             if (volume !== undefined) dev.volume = volume;
             if (isMuted !== undefined) dev.isMuted = isMuted;
-            if (eq !== undefined) dev.eq = eq;
+            if (eq !== undefined) {
+                if (eq.bass !== undefined) dev.eq.bass = eq.bass;
+                if (eq.mid !== undefined) dev.eq.mid = eq.mid;
+                if (eq.treble !== undefined) dev.eq.treble = eq.treble;
+            }
 
             io.to(targetDeviceId).emit('apply-custom-dsp', {
                 channel: dev.channel,
@@ -178,7 +293,6 @@ io.on('connection', (socket) => {
         }
     });
 
-    // Global Overrides
     socket.on('admin-global-mute', (shouldMute) => {
         if (socket.role !== 'admin' || !socket.roomId) return;
         const room = rooms.get(socket.roomId);
@@ -191,7 +305,6 @@ io.on('connection', (socket) => {
         broadcastDeviceList(socket.roomId);
     });
 
-    // Dynamic Spatial Auto-Panning
     socket.on('admin-toggle-auto-pan', (panSettings) => {
         if (socket.role !== 'admin' || !socket.roomId) return;
         const room = rooms.get(socket.roomId);
@@ -201,7 +314,6 @@ io.on('connection', (socket) => {
         io.to(socket.roomId).emit('auto-pan-state-update', room.autoPan);
     });
 
-    // Audio Playback & Seeking Sync
     socket.on('admin-audio-action', (data) => {
         if (socket.role !== 'admin' || !socket.roomId) return;
         const room = rooms.get(socket.roomId);
