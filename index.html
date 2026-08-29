@@ -7,9 +7,25 @@
     <script src="/socket.io/socket.io.js"></script>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0b0e14; color: #c9d1d9; text-align: center; padding: 15px; }
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
+            background: #0b0e14; 
+            color: #c9d1d9; 
+            text-align: center; 
+            padding: 15px; 
+            transition: background 0.2s ease;
+        }
         h1 { margin: 8px 0; color: #58a6ff; font-size: 22px; }
-        .card { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 14px; margin: 10px auto; max-width: 540px; text-align: left; }
+        .card { 
+            background: rgba(22, 27, 34, 0.95); 
+            border: 1px solid #30363d; 
+            border-radius: 10px; 
+            padding: 14px; 
+            margin: 10px auto; 
+            max-width: 540px; 
+            text-align: left; 
+            backdrop-filter: blur(8px);
+        }
         .center { text-align: center; }
         .status-val { font-weight: bold; color: #f2cc60; }
         .error-msg { color: #f85149; font-weight: bold; font-size: 13px; margin-top: 6px; display: none; }
@@ -21,6 +37,7 @@
         .btn-pause { background: #da3633; color: white; font-size: 14px; }
         .btn-warning { background: #d29922; color: #0d1117; font-weight: bold; }
         .btn-secondary { background: #21262d; color: #c9d1d9; border: 1px solid #30363d; }
+        .btn-active { background: #1f6feb !important; color: white !important; border-color: #58a6ff !important; }
         label { display: block; font-size: 11px; color: #8b949e; margin-bottom: 3px; font-weight: 600; text-transform: uppercase; }
         input[type="range"] { width: 100%; margin: 3px 0; accent-color: #58a6ff; }
         input[type="text"], input[type="password"], select, input[type="file"] { width: 100%; padding: 8px; border-radius: 6px; border: 1px solid #30363d; background: #0d1117; color: #c9d1d9; margin-bottom: 8px; font-size: 13px; }
@@ -32,9 +49,16 @@
         .eq-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; margin-top: 6px; }
         .canvas-spectrum { width: 100%; height: 35px; background: #161b22; border-radius: 4px; margin-top: 6px; }
         
-        /* Progress timeline styling */
         .timeline-container { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
         .timeline-time { font-size: 11px; font-family: monospace; color: #8b949e; }
+
+        .playlist-container { background: #0d1117; border: 1px solid #30363d; border-radius: 6px; max-height: 180px; overflow-y: auto; margin-top: 8px; }
+        .playlist-item { display: flex; justify-content: space-between; align-items: center; padding: 8px 10px; border-bottom: 1px solid #21262d; font-size: 12px; cursor: pointer; }
+        .playlist-item:hover { background: #161b22; }
+        .playlist-item.active { background: #1f6feb22; border-left: 3px solid #58a6ff; font-weight: bold; color: #58a6ff; }
+        .remove-btn { background: transparent; color: #f85149; border: none; width: auto; padding: 2px 6px; margin: 0; font-size: 14px; cursor: pointer; }
+        
+        .controls-row { display: flex; gap: 6px; align-items: center; margin-top: 8px; }
     </style>
 </head>
 <body>
@@ -47,7 +71,7 @@
         <p id="latency-display" class="info-text" style="margin-top: 4px;">Latency: 0 ms</p>
     </div>
 
-    <!-- Protected Multi-Room & Role Selection -->
+    <!-- Role & Room Selection -->
     <div id="role-selection" class="card">
         <h3 style="margin-bottom: 12px; text-align: center;">Join Studio Session</h3>
         
@@ -71,7 +95,7 @@
         <p id="auth-error-msg" class="error-msg center"></p>
     </div>
 
-    <!-- Admin View: Connected Device Monitor & Per-Device DSP -->
+    <!-- Connected Devices & DSP -->
     <div id="admin-devices-card" class="card" style="display: none;">
         <h3 style="color: #58a6ff; margin-bottom: 8px; font-size: 15px;">📱 Connected Nodes & Visualizers</h3>
         
@@ -85,28 +109,60 @@
         </div>
     </div>
 
-    <!-- Admin Master Controller & Timeline -->
+    <!-- Admin Master Controller & Playlist -->
     <div id="admin-media-card" class="card" style="display: none;">
-        <h3 style="color: #58a6ff; margin-bottom: 8px; font-size: 15px;">🎼 Track Controller & Spatial Panner</h3>
+        <h3 style="color: #58a6ff; margin-bottom: 8px; font-size: 15px;">🎼 Master Controller & Playlist</h3>
         
-        <label>Select Master Audio Track</label>
-        <input type="file" id="audio-file-input" accept="audio/*" onchange="loadLocalAudioFile(event)">
+        <label>Add Audio Files to Playlist</label>
+        <input type="file" id="audio-file-input" accept="audio/*" multiple onchange="addFilesToPlaylist(event)">
 
         <p id="current-track-label" class="info-text" style="color: #f2cc60; font-weight: bold; margin-top: 4px;">Track: No File Loaded</p>
 
-        <!-- Interactive Timeline Seeking -->
+        <!-- Playlist UI -->
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px;">
+            <label style="margin:0;">Session Playlist</label>
+            <button id="repeat-btn" class="btn-secondary" style="width: auto; padding: 4px 10px; font-size: 11px;" onclick="toggleRepeat()">🔁 Repeat: OFF</button>
+        </div>
+        
+        <div id="playlist-container" class="playlist-container">
+            <p class="info-text" style="padding: 10px;">No tracks in playlist.</p>
+        </div>
+
+        <!-- Timeline Seeking -->
         <div class="timeline-container">
             <span id="curr-time-display" class="timeline-time">00:00</span>
             <input type="range" id="seek-slider" min="0" max="100" value="0" step="0.1" onchange="seekTrack(this.value)">
             <span id="total-time-display" class="timeline-time">00:00</span>
         </div>
 
-        <div style="margin-top: 8px;">
-            <button class="btn-play" onclick="sendAdminAction('play')">PLAY / RESYNC ALL</button>
-            <button class="btn-pause" onclick="sendAdminAction('pause')">PAUSE ALL</button>
+        <!-- Master Transport Buttons -->
+        <div style="margin-top: 8px; display: flex; gap: 6px;">
+            <button class="btn-play" onclick="sendAdminAction('play')">PLAY / RESYNC</button>
+            <button class="btn-pause" onclick="sendAdminAction('pause')">PAUSE</button>
+            <button class="btn-secondary" style="margin-top: 6px;" onclick="nextTrack()">SKIP NEXT ⏭</button>
         </div>
 
-        <div style="margin-top: 12px;">
+        <!-- Playback Rate & Volume -->
+        <div class="controls-row">
+            <div style="flex: 1;">
+                <label>Playback Speed</label>
+                <select id="playback-rate-select" onchange="updatePlaybackRate(this.value)">
+                    <option value="0.5">0.5x</option>
+                    <option value="0.75">0.75x</option>
+                    <option value="1.0" selected>1.0x (Normal)</option>
+                    <option value="1.25">1.25x</option>
+                    <option value="1.5">1.5x</option>
+                    <option value="2.0">2.0x</option>
+                </select>
+            </div>
+            <div style="flex: 1;">
+                <label>Master Gain Volume</label>
+                <input type="range" id="master-vol-slider" min="0" max="1" step="0.05" value="1" onchange="updateMasterVolume(this.value)">
+            </div>
+        </div>
+
+        <!-- Spatial Auto-Panning -->
+        <div style="margin-top: 10px;">
             <label>🔄 Spatial Auto-Panning Engine</label>
             <div style="display: flex; gap: 6px; align-items: center;">
                 <button id="auto-pan-btn" class="btn-secondary" onclick="toggleAutoPan()">Enable Panning Engine</button>
@@ -115,10 +171,13 @@
         </div>
     </div>
 
-    <!-- Local Device Canvas Spectrum Visualizer -->
+    <!-- Visualizer & Background Lighting Toggle -->
     <div class="card center">
-        <label>Local Device Frequency Visualizer</label>
-        <canvas id="local-spectrum-canvas" width="300" height="60" style="background:#0d1117; border-radius:6px; width:100%; margin-top:4px;"></canvas>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <label style="margin: 0;">Local Frequency Visualizer</label>
+            <button id="bg-light-btn" class="btn-secondary" style="width: auto; padding: 4px 10px; font-size: 11px;" onclick="toggleBgLighting()">💡 Dynamic Background Lighting: OFF</button>
+        </div>
+        <canvas id="local-spectrum-canvas" width="300" height="60" style="background:#0d1117; border-radius:6px; width:100%;"></canvas>
     </div>
 
     <audio id="audio-player" style="display: none;"></audio>
@@ -133,14 +192,20 @@
         let audioCtx, sourceNode, gainNode, bassFilter, midFilter, trebleFilter, stereoPanner, analyserNode;
         let isAudioInit = false;
 
+        let localFileStore = [];
+        let activePlaylist = [];
+        let activeTrackIndex = -1;
+
         let autoPanSettings = { enabled: false, speed: 1.0 };
         let panAngle = 0;
+        let bgLightingEnabled = false;
 
         document.body.addEventListener('click', () => {
             if (!isAudioInit) initAudio();
             if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
         }, { once: false });
 
+        // Fully Independent Audio DSP Setup
         function initAudio() {
             if (isAudioInit) return;
             const AudioContext = window.AudioContext || window.webkitAudioContext;
@@ -152,22 +217,30 @@
             analyserNode = audioCtx.createAnalyser();
             analyserNode.fftSize = 64;
 
+            // Low-shelf filter for independent Bass
             bassFilter = audioCtx.createBiquadFilter();
             bassFilter.type = 'lowshelf';
-            bassFilter.frequency.value = 250;
+            bassFilter.frequency.value = 200;
+            bassFilter.gain.value = 0;
 
+            // Peaking filter for independent Midrange
             midFilter = audioCtx.createBiquadFilter();
             midFilter.type = 'peaking';
-            midFilter.frequency.value = 1500;
+            midFilter.frequency.value = 1000;
+            midFilter.Q.value = 1.0;
+            midFilter.gain.value = 0;
 
+            // High-shelf filter for independent Treble
             trebleFilter = audioCtx.createBiquadFilter();
             trebleFilter.type = 'highshelf';
-            trebleFilter.frequency.value = 4000;
+            trebleFilter.frequency.value = 3000;
+            trebleFilter.gain.value = 0;
 
             if (audioCtx.createStereoPanner) {
                 stereoPanner = audioCtx.createStereoPanner();
             }
 
+            // Route sequentially: Source -> Bass -> Mid -> Treble -> Analyser
             sourceNode.connect(bassFilter);
             bassFilter.connect(midFilter);
             midFilter.connect(trebleFilter);
@@ -186,7 +259,16 @@
             renderLocalVisualizerAndStream();
         }
 
-        // Render Local Spectrum Canvas and stream payload to server for Admin monitoring
+        function toggleBgLighting() {
+            bgLightingEnabled = !bgLightingEnabled;
+            const btn = document.getElementById('bg-light-btn');
+            btn.innerText = bgLightingEnabled ? "💡 Dynamic Background Lighting: ON" : "💡 Dynamic Background Lighting: OFF";
+            btn.classList.toggle('btn-active', bgLightingEnabled);
+            if (!bgLightingEnabled) {
+                document.body.style.background = "#0b0e14";
+            }
+        }
+
         function renderLocalVisualizerAndStream() {
             requestAnimationFrame(renderLocalVisualizerAndStream);
             if (!analyserNode) return;
@@ -209,18 +291,24 @@
                 x += barWidth + 2;
             }
 
-            // Low-bandwidth stream payload for Admin monitor
+            // Reactive Background Lighting
+            if (bgLightingEnabled) {
+                const bassVal = dataArray[1] || 0;
+                const trebleVal = dataArray[12] || 0;
+                const red = Math.floor((bassVal / 255) * 60);
+                const blue = Math.floor((trebleVal / 255) * 80);
+                document.body.style.background = `rgb(${red}, 14, ${20 + blue})`;
+            }
+
             const compressedSpectrum = Array.from(dataArray.slice(0, 16));
             socket.emit('device-spectrum-stream', compressedSpectrum);
 
-            // Dynamic Auto-Panning Loop
             if (autoPanSettings.enabled && stereoPanner) {
                 panAngle += 0.02 * autoPanSettings.speed;
                 stereoPanner.pan.value = Math.sin(panAngle);
             }
         }
 
-        // Join Role & Room
         function joinAs(role) {
             currentRoomId = document.getElementById('room-id-input').value || 'MainStudio';
             const password = role === 'admin' 
@@ -250,7 +338,84 @@
             }
         });
 
-        // Admin: Render Connected Nodes, Individual Controls, and Live Spectrums
+        function addFilesToPlaylist(e) {
+            const files = Array.from(e.target.files);
+            const trackMetas = [];
+
+            files.forEach(file => {
+                localFileStore.push(file);
+                trackMetas.push({ name: file.name, duration: 0 });
+            });
+
+            socket.emit('admin-add-to-playlist', trackMetas);
+        }
+
+        socket.on('playlist-update', (data) => {
+            activePlaylist = data.playlist;
+            activeTrackIndex = data.currentIndex;
+            
+            const repeatBtn = document.getElementById('repeat-btn');
+            if (repeatBtn) {
+                repeatBtn.innerText = data.isRepeat ? "🔁 Repeat: ON" : "🔁 Repeat: OFF";
+                repeatBtn.classList.toggle('btn-active', data.isRepeat);
+            }
+            
+            renderPlaylistUI();
+        });
+
+        function renderPlaylistUI() {
+            const container = document.getElementById('playlist-container');
+            if (!activePlaylist || activePlaylist.length === 0) {
+                container.innerHTML = '<p class="info-text" style="padding: 10px;">No tracks in playlist.</p>';
+                return;
+            }
+
+            container.innerHTML = activePlaylist.map((track, i) => `
+                <div class="playlist-item ${i === activeTrackIndex ? 'active' : ''}" onclick="playTrackIndex(${i})">
+                    <span>${i + 1}. ${track.name}</span>
+                    ${currentRole === 'admin' ? `<button class="remove-btn" onclick="removeTrack(event, ${i})">✕</button>` : ''}
+                </div>
+            `).join('');
+
+            if (activeTrackIndex >= 0 && activePlaylist[activeTrackIndex]) {
+                document.getElementById('current-track-label').innerText = `Track: ${activePlaylist[activeTrackIndex].name}`;
+            }
+        }
+
+        function playTrackIndex(index) {
+            if (currentRole !== 'admin') return;
+            if (localFileStore[index]) {
+                audioPlayer.src = URL.createObjectURL(localFileStore[index]);
+            }
+            socket.emit('admin-select-track', index);
+        }
+
+        function removeTrack(e, index) {
+            e.stopPropagation();
+            if (currentRole !== 'admin') return;
+            localFileStore.splice(index, 1);
+            socket.emit('admin-remove-playlist-item', index);
+        }
+
+        function toggleRepeat() {
+            if (currentRole !== 'admin') return;
+            socket.emit('admin-toggle-repeat');
+        }
+
+        function nextTrack() {
+            if (currentRole !== 'admin') return;
+            if (activeTrackIndex + 1 < activePlaylist.length) {
+                playTrackIndex(activeTrackIndex + 1);
+            }
+        }
+
+        audioPlayer.addEventListener('ended', () => {
+            if (currentRole === 'admin') {
+                socket.emit('track-ended-auto-next');
+            }
+        });
+
+        // Connected Device Monitor
         socket.on('device-list-update', (devices) => {
             if (currentRole !== 'admin') return;
 
@@ -284,6 +449,7 @@
                         <input type="range" min="0" max="1" step="0.05" value="${dev.isMuted ? 0 : dev.volume}" onchange="updateDeviceDSP('${dev.id}', 'volume', parseFloat(this.value))">
                     </div>
 
+                    <!-- Independent EQ Sliders -->
                     <div class="eq-grid">
                         <div><label>Bass</label><input type="range" min="-12" max="12" value="${dev.eq.bass}" onchange="updateDeviceEQ('${dev.id}', 'bass', this.value)"></div>
                         <div><label>Mid</label><input type="range" min="-12" max="12" value="${dev.eq.mid}" onchange="updateDeviceEQ('${dev.id}', 'mid', this.value)"></div>
@@ -293,7 +459,6 @@
             `).join('');
         });
 
-        // Broadcast Spectrum Streams to Admin Canvases
         socket.on('spectrum-stream-broadcast', (data) => {
             if (currentRole !== 'admin') return;
             const targetCanvas = document.getElementById(`canvas-spec-${data.id}`);
@@ -316,15 +481,31 @@
             socket.emit('admin-target-device-dsp', payload);
         }
 
+        // Independent EQ Updates
         function updateDeviceEQ(targetId, band, val) {
+            const eqObj = {};
+            eqObj[band] = parseFloat(val);
             socket.emit('admin-target-device-dsp', {
                 targetDeviceId: targetId,
-                eq: { bass: band === 'bass' ? parseFloat(val) : 0, mid: band === 'mid' ? parseFloat(val) : 0, treble: band === 'treble' ? parseFloat(val) : 0 }
+                eq: eqObj
             });
         }
 
         function sendGlobalMute(shouldMute) {
             socket.emit('admin-global-mute', shouldMute);
+        }
+
+        function updatePlaybackRate(rateStr) {
+            if (currentRole !== 'admin') return;
+            const rate = parseFloat(rateStr);
+            audioPlayer.playbackRate = rate;
+            sendAdminAction('play');
+        }
+
+        function updateMasterVolume(val) {
+            if (gainNode) {
+                gainNode.gain.value = parseFloat(val);
+            }
         }
 
         function toggleAutoPan() {
@@ -342,7 +523,7 @@
             autoPanSettings = settings;
         });
 
-        // Apply Custom DSP targeted from Admin
+        // Apply Independent Local DSP
         socket.on('apply-custom-dsp', (dsp) => {
             if (!isAudioInit) initAudio();
 
@@ -356,9 +537,9 @@
             else if (dsp.volume !== undefined) gainNode.gain.value = dsp.volume;
 
             if (dsp.eq) {
-                bassFilter.gain.value = dsp.eq.bass || 0;
-                midFilter.gain.value = dsp.eq.mid || 0;
-                trebleFilter.gain.value = dsp.eq.treble || 0;
+                if (dsp.eq.bass !== undefined) bassFilter.gain.value = dsp.eq.bass;
+                if (dsp.eq.mid !== undefined) midFilter.gain.value = dsp.eq.mid;
+                if (dsp.eq.treble !== undefined) trebleFilter.gain.value = dsp.eq.treble;
             }
         });
 
@@ -375,19 +556,6 @@
             document.getElementById('latency-display').innerText = `Latency: ${Math.round(rtt / 2)} ms`;
             socket.emit('report-latency', rtt / 2);
         });
-
-        // File Loading & Seeking Timeline
-        function loadLocalAudioFile(e) {
-            const file = e.target.files[0];
-            if (file) {
-                audioPlayer.src = URL.createObjectURL(file);
-                audioPlayer.onloadedmetadata = () => {
-                    document.getElementById('current-track-label').innerText = `Track: ${file.name}`;
-                    document.getElementById('total-time-display').innerText = formatTime(audioPlayer.duration);
-                    document.getElementById('seek-slider').max = audioPlayer.duration;
-                };
-            }
-        }
 
         function formatTime(secs) {
             const m = Math.floor(secs / 60) || 0;
@@ -406,12 +574,19 @@
             document.getElementById('seek-slider').value = audioPlayer.currentTime;
         });
 
+        audioPlayer.addEventListener('loadedmetadata', () => {
+            document.getElementById('total-time-display').innerText = formatTime(audioPlayer.duration);
+            document.getElementById('seek-slider').max = audioPlayer.duration;
+        });
+
         function sendAdminAction(action) {
             if (currentRole !== 'admin') return;
+            const rateSelect = document.getElementById('playback-rate-select');
             socket.emit('admin-audio-action', {
                 action: action,
                 timestamp: Date.now() + serverOffset,
                 seekPosition: audioPlayer.currentTime || 0,
+                playbackRate: rateSelect ? parseFloat(rateSelect.value) : 1.0,
                 duration: audioPlayer.duration || 0
             });
         }
@@ -420,9 +595,23 @@
             if (!isAudioInit) initAudio();
             if (audioCtx && audioCtx.state === 'suspended') await audioCtx.resume();
 
-            if (data.action === 'play') {
+            if (data.playbackRate) {
+                audioPlayer.playbackRate = data.playbackRate;
+                const rateSelect = document.getElementById('playback-rate-select');
+                if (rateSelect) rateSelect.value = data.playbackRate.toString();
+            }
+
+            if (data.action === 'play-track-index') {
+                if (localFileStore[data.index]) {
+                    audioPlayer.src = URL.createObjectURL(localFileStore[data.index]);
+                }
                 const now = Date.now() + serverOffset;
-                const passed = (now - data.startTimestamp) / 1000;
+                const passed = ((now - data.startTimestamp) / 1000) * (data.playbackRate || 1.0);
+                audioPlayer.currentTime = Math.max(0, data.seekPosition + passed);
+                audioPlayer.play().catch(e => console.log(e));
+            } else if (data.action === 'play') {
+                const now = Date.now() + serverOffset;
+                const passed = ((now - data.startTimestamp) / 1000) * (data.playbackRate || 1.0);
                 audioPlayer.currentTime = Math.max(0, data.seekPosition + passed);
                 audioPlayer.play().catch(e => console.log(e));
             } else {
