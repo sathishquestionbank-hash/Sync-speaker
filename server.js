@@ -10,13 +10,15 @@ const io = new Server(server, {
 });
 
 // Admin Passcode Configuration
-const ADMIN_PASSWORD = "1234"; // Change your Admin Password here!
+const ADMIN_PASSWORD = "1234"; // <-- Change your Admin Password here!
 
 app.use(express.static(__dirname));
 app.use(express.static(path.join(__dirname, 'public')));
 
 let connectedAdmins = new Set();
 let currentPlaybackState = {
+    sourceType: 'local', // 'local' or 'youtube'
+    youtubeId: '',
     isPlaying: false,
     startTimestamp: 0,
     seekPosition: 0
@@ -25,7 +27,7 @@ let currentPlaybackState = {
 io.on('connection', (socket) => {
     console.log(`[Device Connected] ID: ${socket.id}`);
 
-    // Register Role with Password Authentication for Admin
+    // Register Role with Password Authentication
     socket.on('register-role', (data) => {
         const requestedRole = typeof data === 'string' ? data : data.role;
         const passwordInput = data.password || '';
@@ -60,6 +62,7 @@ io.on('connection', (socket) => {
             socket.emit('role-assigned', { success: true, role: 'listener' });
         }
 
+        // Send current sync state to freshly connected client
         socket.emit('sync-state', currentPlaybackState);
 
         io.emit('stats-update', {
@@ -68,6 +71,7 @@ io.on('connection', (socket) => {
         });
     });
 
+    // Time Synchronization Ping-Pong
     socket.on('time-sync-ping', (clientTime) => {
         socket.emit('time-sync-pong', {
             clientTime: clientTime,
@@ -75,10 +79,13 @@ io.on('connection', (socket) => {
         });
     });
 
+    // Handle Admin Master Audio & YouTube Broadcast Actions
     socket.on('admin-audio-action', (data) => {
         if (socket.role !== 'admin') return;
 
         currentPlaybackState = {
+            sourceType: data.sourceType || 'local',
+            youtubeId: data.youtubeId || currentPlaybackState.youtubeId,
             isPlaying: data.action === 'play',
             startTimestamp: data.timestamp || Date.now(),
             seekPosition: data.seekPosition || 0
@@ -86,6 +93,8 @@ io.on('connection', (socket) => {
 
         io.emit('audio-sync-receive', {
             action: data.action,
+            sourceType: currentPlaybackState.sourceType,
+            youtubeId: currentPlaybackState.youtubeId,
             startTimestamp: currentPlaybackState.startTimestamp,
             seekPosition: currentPlaybackState.seekPosition,
             serverTime: Date.now()
