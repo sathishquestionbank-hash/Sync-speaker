@@ -19,8 +19,6 @@ let trackQueue = [];
 let currentEqMode = 'flat';
 let sleepTimerData = { endTime: 0 };
 let currentPlaybackState = {
-    sourceType: 'local',
-    youtubeId: '',
     isPlaying: false,
     startTimestamp: 0,
     seekPosition: 0,
@@ -87,18 +85,13 @@ io.on('connection', (socket) => {
 
     socket.on('admin-play-queue-index', (index) => {
         if (socket.role !== 'admin' || !trackQueue[index]) return;
-        const song = trackQueue[index];
         
-        currentPlaybackState.sourceType = song.type === 'YouTube' ? 'youtube' : 'local';
-        currentPlaybackState.youtubeId = song.ytId || '';
         currentPlaybackState.isPlaying = true;
         currentPlaybackState.startTimestamp = Date.now();
         currentPlaybackState.seekPosition = 0;
 
         io.emit('audio-sync-receive', {
             action: 'play',
-            sourceType: currentPlaybackState.sourceType,
-            youtubeId: currentPlaybackState.youtubeId,
             startTimestamp: currentPlaybackState.startTimestamp,
             seekPosition: 0,
             playbackRate: currentPlaybackState.playbackRate,
@@ -131,8 +124,6 @@ io.on('connection', (socket) => {
         if (socket.role !== 'admin') return;
 
         currentPlaybackState = {
-            sourceType: data.sourceType || 'local',
-            youtubeId: data.youtubeId || currentPlaybackState.youtubeId,
             isPlaying: data.action === 'play',
             startTimestamp: data.timestamp || Date.now(),
             seekPosition: data.seekPosition || 0,
@@ -141,8 +132,6 @@ io.on('connection', (socket) => {
 
         io.emit('audio-sync-receive', {
             action: data.action,
-            sourceType: currentPlaybackState.sourceType,
-            youtubeId: currentPlaybackState.youtubeId,
             startTimestamp: currentPlaybackState.startTimestamp,
             seekPosition: currentPlaybackState.seekPosition,
             playbackRate: currentPlaybackState.playbackRate,
