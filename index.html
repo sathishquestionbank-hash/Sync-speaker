@@ -19,6 +19,7 @@
         .btn-play { background: #238636; color: white; margin-top: 8px; font-size: 16px; }
         .btn-pause { background: #da3633; color: white; font-size: 16px; }
         .btn-secondary { background: #21262d; color: #c9d1d9; border: 1px solid #30363d; }
+        .btn-resync { background: #8957e5; color: white; margin-top: 6px; }
         .control-group { margin: 12px 0; }
         label { display: block; font-size: 12px; color: #8b949e; margin-bottom: 4px; font-weight: 600; text-transform: uppercase; }
         input[type="range"] { width: 100%; margin: 4px 0; accent-color: #58a6ff; }
@@ -28,7 +29,7 @@
         #visualizer-canvas {
             display: block;
             margin: 0 auto 10px auto;
-            border-radius: 50%;
+            border-radius: 12px;
             background: rgba(13, 17, 23, 0.8);
             box-shadow: 0 0 20px rgba(88, 166, 255, 0.2);
         }
@@ -40,16 +41,16 @@
     <h1>Sync Speaker Studio</h1>
 
     <!-- Audio Reactive Visualizer -->
-    <canvas id="visualizer-canvas" width="130" height="130"></canvas>
+    <canvas id="visualizer-canvas" width="280" height="130"></canvas>
 
-    <!-- Network Info -->
+    <!-- Network Status Info -->
     <div class="card center">
         <p>Role: <span id="role-display" class="status-val">Unassigned</span> | Status: <span id="status-display" class="status-val">Connecting...</span></p>
         <p id="stats-display" class="info-text" style="margin-top: 4px;">Devices: 0 | Admins: 0/2</p>
         <p id="latency-display" class="info-text">Latency Offset: 0 ms</p>
     </div>
 
-    <!-- Role Selection -->
+    <!-- Device Role Selection -->
     <div id="role-selection" class="card center">
         <h3 style="margin-bottom: 12px;">Select Device Role</h3>
         
@@ -65,7 +66,7 @@
         <button class="btn-listener" onclick="joinAs('listener')">Join as Listener</button>
     </div>
 
-    <!-- Admin Only: Song Selection & Controls -->
+    <!-- Admin Only: Music Selection & Controls -->
     <div id="admin-media-card" class="card" style="display: none;">
         <h3 style="color: #58a6ff; margin-bottom: 10px; font-size: 15px;">Admin Master Music Source</h3>
         
@@ -74,9 +75,20 @@
 
         <hr style="border-color: #30363d; margin: 12px 0;">
 
-        <label>Option B: YouTube Video URL or Video ID</label>
-        <input type="text" id="yt-url-input" placeholder="e.g. https://www.youtube.com/watch?v=dQw4w9WgXcQ">
-        <button class="btn-secondary" onclick="loadYouTubeSong()">Load YouTube Song</button>
+        <label>Option B: YouTube / Shorts Link</label>
+        <input type="text" id="yt-url-input" placeholder="e.g. https://youtube.com/shorts/s4tm8Ly3col">
+        <button class="btn-secondary" onclick="loadYouTubeSong()">Load YouTube / Shorts Song</button>
+
+        <div style="margin-top: 12px;">
+            <label>Playback Speed Multiplier</label>
+            <select id="speed-select" onchange="changePlaybackRate(this.value)">
+                <option value="0.5">0.5x Slow</option>
+                <option value="1.0" selected>1.0x Normal Speed</option>
+                <option value="1.25">1.25x Speed</option>
+                <option value="1.5">1.5x Speed</option>
+                <option value="2.0">2.0x Fast</option>
+            </select>
+        </div>
 
         <div style="margin-top: 12px;">
             <label>Master Sync Actions</label>
@@ -85,7 +97,7 @@
         </div>
     </div>
 
-    <!-- Admin Only: Spatial Surround Panner -->
+    <!-- Admin Only: Spatial Surround Controls -->
     <div id="admin-surround-card" class="card" style="display: none;">
         <h3 style="color: #58a6ff; margin-bottom: 10px; font-size: 15px;">Admin Surround & Channel Mode</h3>
         <div class="control-group">
@@ -103,15 +115,26 @@
         </div>
     </div>
 
-    <!-- Available to Everyone: Local Speaker Volume -->
+    <!-- Available to Everyone: Visualizer & Volume Controls -->
     <div class="card">
+        <div class="control-group">
+            <label>Visualizer Effect Mode</label>
+            <select id="vis-mode-select" onchange="visualizerMode = this.value">
+                <option value="bars">Spectrum Frequency Bars</option>
+                <option value="ring">Pulsing Bass Ring</option>
+                <option value="party">RGB Party Strobe</option>
+            </select>
+        </div>
+
         <div class="control-group">
             <label>Local Device Volume: <span id="val-vol">100%</span></label>
             <input type="range" id="vol-slider" min="0" max="1" step="0.01" value="1" oninput="updateVolume(this.value)">
         </div>
+
+        <button class="btn-resync" onclick="forceResync()">Force Manual Resync</button>
     </div>
 
-    <!-- Audio & YouTube Embed Containers -->
+    <!-- Audio & YouTube Embed Elements -->
     <audio id="audio-player" style="display: none;"></audio>
     <div id="yt-player-container"><div id="yt-player"></div></div>
 
@@ -119,7 +142,9 @@
         const socket = io();
         let serverOffset = 0;
         let currentRole = 'unassigned';
-        let currentSourceType = 'local'; // 'local' or 'youtube'
+        let currentSourceType = 'local';
+        let currentPlaybackRate = 1.0;
+        let visualizerMode = 'bars';
 
         const audioPlayer = document.getElementById('audio-player');
 
@@ -132,11 +157,11 @@
         let analyserNode;
         let isAudioEngineInitialized = false;
 
-        // YouTube IFrame Player instance
+        // YouTube IFrame Player Instance
         let ytPlayer;
         let isYtApiReady = false;
 
-        // Visualizer Canvas Setup
+        // Canvas Visualizer Setup
         const canvas = document.getElementById('visualizer-canvas');
         const canvasCtx = canvas.getContext('2d');
 
@@ -207,10 +232,6 @@
 
             canvasCtx.clearRect(0, 0, canvas.width, canvas.height);
 
-            const centerX = canvas.width / 2;
-            const centerY = canvas.height / 2;
-            const radius = 30;
-
             let sum = 0;
             for (let i = 0; i < 8; i++) sum += dataArray[i];
             let bassAvg = sum / 8;
@@ -218,11 +239,30 @@
 
             canvas.style.boxShadow = `0 0 ${15 + glowIntensity}px rgba(88, 166, 255, ${0.3 + (glowIntensity / 70)})`;
 
-            canvasCtx.beginPath();
-            canvasCtx.arc(centerX, centerY, radius + (bassAvg / 15), 0, 2 * Math.PI);
-            canvasCtx.strokeStyle = `hsl(${190 + (bassAvg / 3)}, 80%, 60%)`;
-            canvasCtx.lineWidth = 3;
-            canvasCtx.stroke();
+            if (visualizerMode === 'ring') {
+                const centerX = canvas.width / 2;
+                const centerY = canvas.height / 2;
+                const radius = 30;
+
+                canvasCtx.beginPath();
+                canvasCtx.arc(centerX, centerY, radius + (bassAvg / 15), 0, 2 * Math.PI);
+                canvasCtx.strokeStyle = `hsl(${190 + (bassAvg / 3)}, 80%, 60%)`;
+                canvasCtx.lineWidth = 4;
+                canvasCtx.stroke();
+            } else if (visualizerMode === 'bars') {
+                const barWidth = (canvas.width / bufferLength) - 2;
+                let x = 0;
+
+                for (let i = 0; i < bufferLength; i++) {
+                    let barHeight = (dataArray[i] / 255) * canvas.height;
+                    canvasCtx.fillStyle = `hsl(${200 + i * 8}, 80%, 60%)`;
+                    canvasCtx.fillRect(x, canvas.height - barHeight, barWidth, barHeight);
+                    x += barWidth + 2;
+                }
+            } else if (visualizerMode === 'party') {
+                canvasCtx.fillStyle = `hsl(${bassAvg * 2.5}, 90%, ${Math.min(50, bassAvg / 2)}%)`;
+                canvasCtx.fillRect(0, 0, canvas.width, canvas.height);
+            }
         }
 
         function measureLatency() {
@@ -262,7 +302,6 @@
             document.getElementById('status-display').style.color = '#f2cc60';
             document.getElementById('role-selection').style.display = 'none';
 
-            // Show admin controls ONLY if authenticated as admin
             if (data.role === 'admin') {
                 document.getElementById('admin-media-card').style.display = 'block';
                 document.getElementById('admin-surround-card').style.display = 'block';
@@ -285,27 +324,44 @@
                 currentSourceType = 'local';
                 const objectUrl = URL.createObjectURL(file);
                 audioPlayer.src = objectUrl;
-                alert("Local audio file loaded into master engine!");
+                alert("Local audio file loaded!");
             }
         }
 
         function extractYouTubeId(url) {
-            const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
+            if (!url) return '';
+            url = url.trim();
+            const regExp = /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=|shorts\/)|youtu\.be\/)([^"&?\/\s]{11})/;
             const match = url.match(regExp);
-            return (match && match[2].length === 11) ? match[2] : url;
+
+            if (match && match[1]) {
+                return match[1];
+            }
+            return url.length === 11 ? url : null;
         }
 
         function loadYouTubeSong() {
             if (currentRole !== 'admin') return;
-            const inputVal = document.getElementById('yt-url-input').value.trim();
-            if (!inputVal) return alert("Please enter a YouTube URL or ID");
-
+            const inputVal = document.getElementById('yt-url-input').value;
             const ytId = extractYouTubeId(inputVal);
+
+            if (!ytId) {
+                alert("Invalid YouTube URL or Shorts link!");
+                return;
+            }
+
             currentSourceType = 'youtube';
 
             if (isYtApiReady && ytPlayer) {
                 ytPlayer.cueVideoById(ytId);
                 alert(`YouTube Video ID (${ytId}) cued across cluster!`);
+            }
+        }
+
+        function changePlaybackRate(rate) {
+            currentPlaybackRate = parseFloat(rate);
+            if (currentRole === 'admin') {
+                sendAdminAction('play');
             }
         }
 
@@ -319,8 +375,7 @@
                 currentSeek = audioPlayer.currentTime || 0;
             } else if (currentSourceType === 'youtube' && ytPlayer && ytPlayer.getCurrentTime) {
                 currentSeek = ytPlayer.getCurrentTime() || 0;
-                const inputVal = document.getElementById('yt-url-input').value.trim();
-                ytId = extractYouTubeId(inputVal);
+                ytId = extractYouTubeId(document.getElementById('yt-url-input').value);
             }
 
             socket.emit('admin-audio-action', {
@@ -328,36 +383,44 @@
                 sourceType: currentSourceType,
                 youtubeId: ytId,
                 timestamp: Date.now() + serverOffset,
-                seekPosition: currentSeek
+                seekPosition: currentSeek,
+                playbackRate: currentPlaybackRate
             });
         }
 
         socket.on('audio-sync-receive', (data) => {
             currentSourceType = data.sourceType || 'local';
+            currentPlaybackRate = data.playbackRate || 1.0;
 
             if (currentSourceType === 'local') {
                 initAudioEngine();
                 if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
                 if (ytPlayer && ytPlayer.pauseVideo) ytPlayer.pauseVideo();
 
+                audioPlayer.playbackRate = currentPlaybackRate;
+
                 if (data.action === 'play') {
                     const now = Date.now() + serverOffset;
-                    const timePassed = (now - data.startTimestamp) / 1000;
+                    const timePassed = ((now - data.startTimestamp) / 1000) * currentPlaybackRate;
                     const targetSeek = Math.max(0, data.seekPosition + timePassed);
 
                     if (Math.abs(audioPlayer.currentTime - targetSeek) > 0.08) {
                         audioPlayer.currentTime = targetSeek;
                     }
-                    audioPlayer.play().catch(e => console.log("Tap screen to grant sound permissions", e));
+                    audioPlayer.play().catch(e => console.log("Tap screen to allow audio", e));
                 } else if (data.action === 'pause') {
                     audioPlayer.pause();
                 }
             } else if (currentSourceType === 'youtube' && isYtApiReady && ytPlayer) {
                 audioPlayer.pause();
 
+                if (ytPlayer.setPlaybackRate) {
+                    ytPlayer.setPlaybackRate(currentPlaybackRate);
+                }
+
                 if (data.action === 'play') {
                     const now = Date.now() + serverOffset;
-                    const timePassed = (now - data.startTimestamp) / 1000;
+                    const timePassed = ((now - data.startTimestamp) / 1000) * currentPlaybackRate;
                     const targetSeek = Math.max(0, data.seekPosition + timePassed);
 
                     ytPlayer.loadVideoById(data.youtubeId, targetSeek);
@@ -367,6 +430,14 @@
                 }
             }
         });
+
+        function forceResync() {
+            measureLatency();
+            if (audioCtx && audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+            alert("Resynced network clock with master server!");
+        }
 
         function updateSpatialPanner() {
             if (currentRole !== 'admin') return;
