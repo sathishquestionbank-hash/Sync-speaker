@@ -10,9 +10,8 @@ const io = new Server(server, {
 });
 
 // Admin Passcode Configuration
-const ADMIN_PASSWORD = "1234"; // <-- Change your Admin Password here!
+const ADMIN_PASSWORD = "1234"; // Change your Admin Password here!
 
-// Serve static files from root and public directories
 app.use(express.static(__dirname));
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -35,7 +34,7 @@ io.on('connection', (socket) => {
             if (passwordInput !== ADMIN_PASSWORD) {
                 socket.emit('role-assigned', { 
                     success: false, 
-                    message: 'Incorrect Admin Password!' 
+                    message: 'Authentication failed: Incorrect Password' 
                 });
                 return;
             }
@@ -61,7 +60,6 @@ io.on('connection', (socket) => {
             socket.emit('role-assigned', { success: true, role: 'listener' });
         }
 
-        // Send current sync state to freshly connected client
         socket.emit('sync-state', currentPlaybackState);
 
         io.emit('stats-update', {
@@ -70,7 +68,6 @@ io.on('connection', (socket) => {
         });
     });
 
-    // Time Synchronization Ping-Pong for Drift Calculation
     socket.on('time-sync-ping', (clientTime) => {
         socket.emit('time-sync-pong', {
             clientTime: clientTime,
@@ -78,7 +75,6 @@ io.on('connection', (socket) => {
         });
     });
 
-    // Handle Admin Master Audio Sync Events
     socket.on('admin-audio-action', (data) => {
         if (socket.role !== 'admin') return;
 
@@ -88,7 +84,6 @@ io.on('connection', (socket) => {
             seekPosition: data.seekPosition || 0
         };
 
-        // Broadcast synchronized audio event to all connected devices
         io.emit('audio-sync-receive', {
             action: data.action,
             startTimestamp: currentPlaybackState.startTimestamp,
