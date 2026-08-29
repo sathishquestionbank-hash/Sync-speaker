@@ -8,27 +8,33 @@
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0b0e14; color: #c9d1d9; text-align: center; padding: 15px; }
-        h1 { margin: 10px 0; color: #58a6ff; font-size: 22px; }
-        .card { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 15px; margin: 12px auto; max-width: 520px; text-align: left; }
+        h1 { margin: 8px 0; color: #58a6ff; font-size: 22px; }
+        .card { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 14px; margin: 10px auto; max-width: 540px; text-align: left; }
         .center { text-align: center; }
         .status-val { font-weight: bold; color: #f2cc60; }
         .error-msg { color: #f85149; font-weight: bold; font-size: 13px; margin-top: 6px; display: none; }
-        button { padding: 10px 14px; margin: 4px 0; font-size: 13px; font-weight: bold; border: none; border-radius: 6px; cursor: pointer; width: 100%; }
+        button { padding: 10px 14px; margin: 4px 0; font-size: 13px; font-weight: bold; border: none; border-radius: 6px; cursor: pointer; width: 100%; transition: opacity 0.2s; }
+        button:active { opacity: 0.8; }
         .btn-admin { background: #238636; color: white; }
         .btn-listener { background: #1f6feb; color: white; }
-        .btn-play { background: #238636; color: white; margin-top: 8px; font-size: 15px; }
-        .btn-pause { background: #da3633; color: white; font-size: 15px; }
+        .btn-play { background: #238636; color: white; margin-top: 6px; font-size: 14px; }
+        .btn-pause { background: #da3633; color: white; font-size: 14px; }
+        .btn-warning { background: #d29922; color: #0d1117; font-weight: bold; }
         .btn-secondary { background: #21262d; color: #c9d1d9; border: 1px solid #30363d; }
         label { display: block; font-size: 11px; color: #8b949e; margin-bottom: 3px; font-weight: 600; text-transform: uppercase; }
         input[type="range"] { width: 100%; margin: 3px 0; accent-color: #58a6ff; }
-        input[type="password"], select, input[type="file"] { width: 100%; padding: 8px; border-radius: 6px; border: 1px solid #30363d; background: #0d1117; color: #c9d1d9; margin-bottom: 8px; font-size: 13px; }
+        input[type="text"], input[type="password"], select, input[type="file"] { width: 100%; padding: 8px; border-radius: 6px; border: 1px solid #30363d; background: #0d1117; color: #c9d1d9; margin-bottom: 8px; font-size: 13px; }
         .info-text { font-size: 12px; color: #8b949e; }
         
-        /* Connected Devices List */
-        .device-card { background: #0d1117; border: 1px solid #30363d; border-radius: 6px; padding: 10px; margin-bottom: 8px; font-size: 12px; }
+        .device-card { background: #0d1117; border: 1px solid #30363d; border-radius: 8px; padding: 10px; margin-bottom: 10px; font-size: 12px; }
         .device-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
         .device-id { font-weight: bold; color: #58a6ff; }
         .eq-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; margin-top: 6px; }
+        .canvas-spectrum { width: 100%; height: 35px; background: #161b22; border-radius: 4px; margin-top: 6px; }
+        
+        /* Progress timeline styling */
+        .timeline-container { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+        .timeline-time { font-size: 11px; font-family: monospace; color: #8b949e; }
     </style>
 </head>
 <body>
@@ -37,14 +43,17 @@
 
     <!-- Network Info -->
     <div class="card center">
-        <p>Role: <span id="role-display" class="status-val">Unassigned</span> | Status: <span id="status-display" class="status-val">Connecting...</span></p>
+        <p>Room: <span id="room-display" class="status-val">MainStudio</span> | Role: <span id="role-display" class="status-val">Unassigned</span></p>
         <p id="latency-display" class="info-text" style="margin-top: 4px;">Latency: 0 ms</p>
     </div>
 
-    <!-- Protected Role Selection -->
+    <!-- Protected Multi-Room & Role Selection -->
     <div id="role-selection" class="card">
-        <h3 style="margin-bottom: 12px; text-align: center;">Device Authentication</h3>
+        <h3 style="margin-bottom: 12px; text-align: center;">Join Studio Session</h3>
         
+        <label>Room Identifier:</label>
+        <input type="text" id="room-id-input" value="MainStudio" placeholder="e.g. LivingRoom">
+
         <div style="margin-bottom: 12px;">
             <label>Admin Password:</label>
             <input type="password" id="admin-passcode" placeholder="Default: 1234">
@@ -56,44 +65,76 @@
         <div style="margin-bottom: 6px;">
             <label>Listener Password:</label>
             <input type="password" id="listener-passcode" placeholder="Default: listenpass">
-            <button class="btn-listener" onclick="joinAs('listener')">Join as Connected Listener</button>
+            <button class="btn-listener" onclick="joinAs('listener')">Join as Listener</button>
         </div>
 
         <p id="auth-error-msg" class="error-msg center"></p>
     </div>
 
-    <!-- Admin View: Device Management (Equalizer & Surround) -->
+    <!-- Admin View: Connected Device Monitor & Per-Device DSP -->
     <div id="admin-devices-card" class="card" style="display: none;">
-        <h3 style="color: #58a6ff; margin-bottom: 8px; font-size: 15px;">📱 Connected Devices Manager</h3>
-        <p class="info-text" style="margin-bottom: 10px;">Individual surround routing and 3-band EQ per speaker.</p>
+        <h3 style="color: #58a6ff; margin-bottom: 8px; font-size: 15px;">📱 Connected Nodes & Visualizers</h3>
+        
+        <div style="display: flex; gap: 6px; margin-bottom: 10px;">
+            <button class="btn-warning" onclick="sendGlobalMute(true)">Mute All Devices</button>
+            <button class="btn-secondary" onclick="sendGlobalMute(false)">Unmute All</button>
+        </div>
+
         <div id="connected-devices-container">
-            <p class="info-text">Scanning network for devices...</p>
+            <p class="info-text">Scanning network for connected devices...</p>
         </div>
     </div>
 
-    <!-- Admin Master Audio Controls -->
+    <!-- Admin Master Controller & Timeline -->
     <div id="admin-media-card" class="card" style="display: none;">
-        <h3 style="color: #58a6ff; margin-bottom: 8px; font-size: 15px;">Admin Master Source</h3>
-        <label>Upload Audio Track</label>
+        <h3 style="color: #58a6ff; margin-bottom: 8px; font-size: 15px;">🎼 Track Controller & Spatial Panner</h3>
+        
+        <label>Select Master Audio Track</label>
         <input type="file" id="audio-file-input" accept="audio/*" onchange="loadLocalAudioFile(event)">
+
+        <p id="current-track-label" class="info-text" style="color: #f2cc60; font-weight: bold; margin-top: 4px;">Track: No File Loaded</p>
+
+        <!-- Interactive Timeline Seeking -->
+        <div class="timeline-container">
+            <span id="curr-time-display" class="timeline-time">00:00</span>
+            <input type="range" id="seek-slider" min="0" max="100" value="0" step="0.1" onchange="seekTrack(this.value)">
+            <span id="total-time-display" class="timeline-time">00:00</span>
+        </div>
 
         <div style="margin-top: 8px;">
             <button class="btn-play" onclick="sendAdminAction('play')">PLAY / RESYNC ALL</button>
             <button class="btn-pause" onclick="sendAdminAction('pause')">PAUSE ALL</button>
         </div>
+
+        <div style="margin-top: 12px;">
+            <label>🔄 Spatial Auto-Panning Engine</label>
+            <div style="display: flex; gap: 6px; align-items: center;">
+                <button id="auto-pan-btn" class="btn-secondary" onclick="toggleAutoPan()">Enable Panning Engine</button>
+                <input type="range" id="pan-speed-slider" min="0.1" max="3" step="0.1" value="1" onchange="updatePanSpeed(this.value)">
+            </div>
+        </div>
     </div>
 
-    <!-- Local Audio Element -->
+    <!-- Local Device Canvas Spectrum Visualizer -->
+    <div class="card center">
+        <label>Local Device Frequency Visualizer</label>
+        <canvas id="local-spectrum-canvas" width="300" height="60" style="background:#0d1117; border-radius:6px; width:100%; margin-top:4px;"></canvas>
+    </div>
+
     <audio id="audio-player" style="display: none;"></audio>
 
     <script>
         const socket = io();
         let currentRole = 'unassigned';
+        let currentRoomId = 'MainStudio';
         let serverOffset = 0;
 
         const audioPlayer = document.getElementById('audio-player');
-        let audioCtx, sourceNode, gainNode, bassFilter, midFilter, trebleFilter, stereoPanner;
+        let audioCtx, sourceNode, gainNode, bassFilter, midFilter, trebleFilter, stereoPanner, analyserNode;
         let isAudioInit = false;
+
+        let autoPanSettings = { enabled: false, speed: 1.0 };
+        let panAngle = 0;
 
         document.body.addEventListener('click', () => {
             if (!isAudioInit) initAudio();
@@ -108,7 +149,9 @@
             sourceNode = audioCtx.createMediaElementSource(audioPlayer);
             gainNode = audioCtx.createGain();
 
-            // 3-Band Equalizer Setup
+            analyserNode = audioCtx.createAnalyser();
+            analyserNode.fftSize = 64;
+
             bassFilter = audioCtx.createBiquadFilter();
             bassFilter.type = 'lowshelf';
             bassFilter.frequency.value = 250;
@@ -116,7 +159,6 @@
             midFilter = audioCtx.createBiquadFilter();
             midFilter.type = 'peaking';
             midFilter.frequency.value = 1500;
-            midFilter.Q.value = 1.0;
 
             trebleFilter = audioCtx.createBiquadFilter();
             trebleFilter.type = 'highshelf';
@@ -126,14 +168,14 @@
                 stereoPanner = audioCtx.createStereoPanner();
             }
 
-            // Chain: Source -> Bass -> Mid -> Treble -> Panner -> Gain -> Out
             sourceNode.connect(bassFilter);
             bassFilter.connect(midFilter);
             midFilter.connect(trebleFilter);
+            trebleFilter.connect(analyserNode);
 
-            let lastNode = trebleFilter;
+            let lastNode = analyserNode;
             if (stereoPanner) {
-                trebleFilter.connect(stereoPanner);
+                analyserNode.connect(stereoPanner);
                 lastNode = stereoPanner;
             }
 
@@ -141,16 +183,52 @@
             gainNode.connect(audioCtx.destination);
 
             isAudioInit = true;
+            renderLocalVisualizerAndStream();
         }
 
-        // Join Role
+        // Render Local Spectrum Canvas and stream payload to server for Admin monitoring
+        function renderLocalVisualizerAndStream() {
+            requestAnimationFrame(renderLocalVisualizerAndStream);
+            if (!analyserNode) return;
+
+            const canvas = document.getElementById('local-spectrum-canvas');
+            const ctx = canvas.getContext('2d');
+            const bufferLength = analyserNode.frequencyBinCount;
+            const dataArray = new Uint8Array(bufferLength);
+
+            analyserNode.getByteFrequencyData(dataArray);
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            const barWidth = (canvas.width / bufferLength) - 2;
+            let x = 0;
+
+            for (let i = 0; i < bufferLength; i++) {
+                const barHeight = (dataArray[i] / 255) * canvas.height;
+                ctx.fillStyle = `hsl(${200 + i * 10}, 80%, 60%)`;
+                ctx.fillRect(x, canvas.height - barHeight, barWidth, barHeight);
+                x += barWidth + 2;
+            }
+
+            // Low-bandwidth stream payload for Admin monitor
+            const compressedSpectrum = Array.from(dataArray.slice(0, 16));
+            socket.emit('device-spectrum-stream', compressedSpectrum);
+
+            // Dynamic Auto-Panning Loop
+            if (autoPanSettings.enabled && stereoPanner) {
+                panAngle += 0.02 * autoPanSettings.speed;
+                stereoPanner.pan.value = Math.sin(panAngle);
+            }
+        }
+
+        // Join Role & Room
         function joinAs(role) {
+            currentRoomId = document.getElementById('room-id-input').value || 'MainStudio';
             const password = role === 'admin' 
                 ? document.getElementById('admin-passcode').value 
                 : document.getElementById('listener-passcode').value;
 
             document.getElementById('auth-error-msg').style.display = 'none';
-            socket.emit('register-role', { role: role, password: password });
+            socket.emit('register-role', { role: role, password: password, roomId: currentRoomId });
         }
 
         socket.on('role-assigned', (data) => {
@@ -162,8 +240,8 @@
             }
 
             currentRole = data.role;
+            document.getElementById('room-display').innerText = data.roomId;
             document.getElementById('role-display').innerText = data.role.toUpperCase();
-            document.getElementById('status-display').innerText = 'Connected';
             document.getElementById('role-selection').style.display = 'none';
 
             if (data.role === 'admin') {
@@ -172,13 +250,13 @@
             }
         });
 
-        // Admin: Render Connected Devices List & Per-Device Controls
+        // Admin: Render Connected Nodes, Individual Controls, and Live Spectrums
         socket.on('device-list-update', (devices) => {
             if (currentRole !== 'admin') return;
 
             const container = document.getElementById('connected-devices-container');
             if (devices.length === 0) {
-                container.innerHTML = '<p class="info-text">No connected devices.</p>';
+                container.innerHTML = '<p class="info-text">No connected nodes.</p>';
                 return;
             }
 
@@ -186,41 +264,50 @@
                 <div class="device-card">
                     <div class="device-header">
                         <span class="device-id">${dev.id.substring(0, 6)}... (${dev.role.toUpperCase()})</span>
-                        <span class="info-text">Ping: ${dev.latency}ms</span>
+                        <span class="info-text">Latency: ${dev.latency}ms</span>
                     </div>
 
+                    <canvas id="canvas-spec-${dev.id}" class="canvas-spectrum" width="200" height="35"></canvas>
+
                     <div style="margin-top: 6px;">
-                        <label>Surround Channel</label>
+                        <label>Spatial Channel</label>
                         <select onchange="updateDeviceDSP('${dev.id}', 'channel', this.value)">
                             <option value="center" ${dev.channel === 'center' ? 'selected' : ''}>Center / Stereo</option>
-                            <option value="left" ${dev.channel === 'left' ? 'selected' : ''}>Left Channel</option>
-                            <option value="right" ${dev.channel === 'right' ? 'selected' : ''}>Right Channel</option>
+                            <option value="left" ${dev.channel === 'left' ? 'selected' : ''}>Left Speaker</option>
+                            <option value="right" ${dev.channel === 'right' ? 'selected' : ''}>Right Speaker</option>
                             <option value="sub" ${dev.channel === 'sub' ? 'selected' : ''}>Bass Subwoofer</option>
                         </select>
                     </div>
 
                     <div style="margin-top: 4px;">
-                        <label>Individual Gain Volume</label>
-                        <input type="range" min="0" max="1" step="0.05" value="${dev.volume}" onchange="updateDeviceDSP('${dev.id}', 'volume', parseFloat(this.value))">
+                        <label>Node Gain Volume</label>
+                        <input type="range" min="0" max="1" step="0.05" value="${dev.isMuted ? 0 : dev.volume}" onchange="updateDeviceDSP('${dev.id}', 'volume', parseFloat(this.value))">
                     </div>
 
-                    <label style="margin-top: 6px;">3-Band Equalizer (dB)</label>
                     <div class="eq-grid">
-                        <div>
-                            <label>Bass</label>
-                            <input type="range" min="-12" max="12" value="${dev.eq.bass}" onchange="updateDeviceEQ('${dev.id}', 'bass', this.value)">
-                        </div>
-                        <div>
-                            <label>Mid</label>
-                            <input type="range" min="-12" max="12" value="${dev.eq.mid}" onchange="updateDeviceEQ('${dev.id}', 'mid', this.value)">
-                        </div>
-                        <div>
-                            <label>Treble</label>
-                            <input type="range" min="-12" max="12" value="${dev.eq.treble}" onchange="updateDeviceEQ('${dev.id}', 'treble', this.value)">
-                        </div>
+                        <div><label>Bass</label><input type="range" min="-12" max="12" value="${dev.eq.bass}" onchange="updateDeviceEQ('${dev.id}', 'bass', this.value)"></div>
+                        <div><label>Mid</label><input type="range" min="-12" max="12" value="${dev.eq.mid}" onchange="updateDeviceEQ('${dev.id}', 'mid', this.value)"></div>
+                        <div><label>Treble</label><input type="range" min="-12" max="12" value="${dev.eq.treble}" onchange="updateDeviceEQ('${dev.id}', 'treble', this.value)"></div>
                     </div>
                 </div>
             `).join('');
+        });
+
+        // Broadcast Spectrum Streams to Admin Canvases
+        socket.on('spectrum-stream-broadcast', (data) => {
+            if (currentRole !== 'admin') return;
+            const targetCanvas = document.getElementById(`canvas-spec-${data.id}`);
+            if (!targetCanvas) return;
+
+            const ctx = targetCanvas.getContext('2d');
+            ctx.clearRect(0, 0, targetCanvas.width, targetCanvas.height);
+            const barWidth = (targetCanvas.width / data.spectrumData.length) - 1;
+
+            data.spectrumData.forEach((val, i) => {
+                const h = (val / 255) * targetCanvas.height;
+                ctx.fillStyle = '#58a6ff';
+                ctx.fillRect(i * (barWidth + 1), targetCanvas.height - h, barWidth, h);
+            });
         });
 
         function updateDeviceDSP(targetId, key, value) {
@@ -230,32 +317,44 @@
         }
 
         function updateDeviceEQ(targetId, band, val) {
-            const devCard = document.querySelector(`[onchange*="${targetId}"]`);
             socket.emit('admin-target-device-dsp', {
                 targetDeviceId: targetId,
-                eq: {
-                    bass: band === 'bass' ? parseFloat(val) : 0,
-                    mid: band === 'mid' ? parseFloat(val) : 0,
-                    treble: band === 'treble' ? parseFloat(val) : 0
-                }
+                eq: { bass: band === 'bass' ? parseFloat(val) : 0, mid: band === 'mid' ? parseFloat(val) : 0, treble: band === 'treble' ? parseFloat(val) : 0 }
             });
         }
+
+        function sendGlobalMute(shouldMute) {
+            socket.emit('admin-global-mute', shouldMute);
+        }
+
+        function toggleAutoPan() {
+            autoPanSettings.enabled = !autoPanSettings.enabled;
+            document.getElementById('auto-pan-btn').innerText = autoPanSettings.enabled ? "Disable Panning" : "Enable Panning Engine";
+            socket.emit('admin-toggle-auto-pan', autoPanSettings);
+        }
+
+        function updatePanSpeed(val) {
+            autoPanSettings.speed = parseFloat(val);
+            socket.emit('admin-toggle-auto-pan', autoPanSettings);
+        }
+
+        socket.on('auto-pan-state-update', (settings) => {
+            autoPanSettings = settings;
+        });
 
         // Apply Custom DSP targeted from Admin
         socket.on('apply-custom-dsp', (dsp) => {
             if (!isAudioInit) initAudio();
 
-            // Channel Surround
-            if (stereoPanner) {
+            if (stereoPanner && !autoPanSettings.enabled) {
                 if (dsp.channel === 'left') stereoPanner.pan.value = -1;
                 else if (dsp.channel === 'right') stereoPanner.pan.value = 1;
                 else stereoPanner.pan.value = 0;
             }
 
-            // Volume
-            if (dsp.volume !== undefined) gainNode.gain.value = dsp.volume;
+            if (dsp.isMuted) gainNode.gain.value = 0;
+            else if (dsp.volume !== undefined) gainNode.gain.value = dsp.volume;
 
-            // Equalizer
             if (dsp.eq) {
                 bassFilter.gain.value = dsp.eq.bass || 0;
                 midFilter.gain.value = dsp.eq.mid || 0;
@@ -277,18 +376,43 @@
             socket.emit('report-latency', rtt / 2);
         });
 
-        // Audio Controls
+        // File Loading & Seeking Timeline
         function loadLocalAudioFile(e) {
             const file = e.target.files[0];
-            if (file) audioPlayer.src = URL.createObjectURL(file);
+            if (file) {
+                audioPlayer.src = URL.createObjectURL(file);
+                audioPlayer.onloadedmetadata = () => {
+                    document.getElementById('current-track-label').innerText = `Track: ${file.name}`;
+                    document.getElementById('total-time-display').innerText = formatTime(audioPlayer.duration);
+                    document.getElementById('seek-slider').max = audioPlayer.duration;
+                };
+            }
         }
+
+        function formatTime(secs) {
+            const m = Math.floor(secs / 60) || 0;
+            const s = Math.floor(secs % 60) || 0;
+            return `${m < 10 ? '0' : ''}${m}:${s < 10 ? '0' : ''}${s}`;
+        }
+
+        function seekTrack(value) {
+            if (currentRole !== 'admin') return;
+            audioPlayer.currentTime = parseFloat(value);
+            sendAdminAction('play');
+        }
+
+        audioPlayer.addEventListener('timeupdate', () => {
+            document.getElementById('curr-time-display').innerText = formatTime(audioPlayer.currentTime);
+            document.getElementById('seek-slider').value = audioPlayer.currentTime;
+        });
 
         function sendAdminAction(action) {
             if (currentRole !== 'admin') return;
             socket.emit('admin-audio-action', {
                 action: action,
                 timestamp: Date.now() + serverOffset,
-                seekPosition: audioPlayer.currentTime || 0
+                seekPosition: audioPlayer.currentTime || 0,
+                duration: audioPlayer.duration || 0
             });
         }
 
