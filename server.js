@@ -9,8 +9,8 @@ const io = new Server(server, {
     cors: { origin: "*", methods: ["GET", "POST"] }
 });
 
-// Admin Passcode Configuration
-const ADMIN_PASSWORD = "1234"; // <-- Change your Admin Password here!
+// Configuration
+const ADMIN_PASSWORD = "1234"; // Set your desired Admin password here
 
 app.use(express.static(__dirname));
 app.use(express.static(path.join(__dirname, 'public')));
@@ -21,13 +21,14 @@ let currentPlaybackState = {
     youtubeId: '',
     isPlaying: false,
     startTimestamp: 0,
-    seekPosition: 0
+    seekPosition: 0,
+    playbackRate: 1.0
 };
 
 io.on('connection', (socket) => {
     console.log(`[Device Connected] ID: ${socket.id}`);
 
-    // Register Role with Password Authentication
+    // Handle Role Registration and Passcode Verification
     socket.on('register-role', (data) => {
         const requestedRole = typeof data === 'string' ? data : data.role;
         const passwordInput = data.password || '';
@@ -62,7 +63,7 @@ io.on('connection', (socket) => {
             socket.emit('role-assigned', { success: true, role: 'listener' });
         }
 
-        // Send current sync state to freshly connected client
+        // Catch new device up with current playback status
         socket.emit('sync-state', currentPlaybackState);
 
         io.emit('stats-update', {
@@ -71,7 +72,7 @@ io.on('connection', (socket) => {
         });
     });
 
-    // Time Synchronization Ping-Pong
+    // Precision Time-Sync Ping-Pong
     socket.on('time-sync-ping', (clientTime) => {
         socket.emit('time-sync-pong', {
             clientTime: clientTime,
@@ -79,7 +80,7 @@ io.on('connection', (socket) => {
         });
     });
 
-    // Handle Admin Master Audio & YouTube Broadcast Actions
+    // Handle Admin Playback, Speed & Track Commands
     socket.on('admin-audio-action', (data) => {
         if (socket.role !== 'admin') return;
 
@@ -88,7 +89,8 @@ io.on('connection', (socket) => {
             youtubeId: data.youtubeId || currentPlaybackState.youtubeId,
             isPlaying: data.action === 'play',
             startTimestamp: data.timestamp || Date.now(),
-            seekPosition: data.seekPosition || 0
+            seekPosition: data.seekPosition || 0,
+            playbackRate: data.playbackRate || currentPlaybackState.playbackRate
         };
 
         io.emit('audio-sync-receive', {
@@ -97,6 +99,7 @@ io.on('connection', (socket) => {
             youtubeId: currentPlaybackState.youtubeId,
             startTimestamp: currentPlaybackState.startTimestamp,
             seekPosition: currentPlaybackState.seekPosition,
+            playbackRate: currentPlaybackState.playbackRate,
             serverTime: Date.now()
         });
     });
@@ -109,6 +112,7 @@ io.on('connection', (socket) => {
             totalDevices: io.engine.clientsCount,
             adminCount: connectedAdmins.size
         });
+        console.log(`[Device Disconnected] ID: ${socket.id}`);
     });
 });
 
