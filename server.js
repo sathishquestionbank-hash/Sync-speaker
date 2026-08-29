@@ -9,14 +9,17 @@ const io = new Server(server, {
     cors: { origin: "*", methods: ["GET", "POST"] }
 });
 
+// Passwords
 const ADMIN_PASSWORD = "1234";
+const LISTENER_PASSWORD = "listenpass";
 
 app.use(express.static(__dirname));
 app.use(express.static(path.join(__dirname, 'public')));
 
 let connectedAdmins = new Set();
+let devicesMap = new Map(); // Stores device metadata: role, channel, latency, eq, vol
 let trackQueue = [];
-let currentEqMode = 'flat';
+let globalEqMode = 'flat';
 let sleepTimerData = { endTime: 0 };
 let currentPlaybackState = {
     isPlaying: false,
@@ -25,18 +28,37 @@ let currentPlaybackState = {
     playbackRate: 1.0
 };
 
+function getDeviceList() {
+    const list = [];
+    devicesMap.forEach((info, id) => {
+        list.push({ id, ...info });
+    });
+    return list;
+}
+
+function broadcastDeviceList() {
+    io.emit('device-list-update', getDeviceList());
+}
+
 io.on('connection', (socket) => {
-    console.log(`[Device Connected] ID: ${socket.id}`);
+    // Initialize default per-device settings
+    devicesMap.set(socket.id, {
+        role: 'unassigned',
+        latency: 0,
+        channel: 'center',
+        volume: 1.0,
+        eq: { bass: 0, mid: 0, treble: 0 }
+    });
 
     socket.on('register-role', (data) => {
         const requestedRole = typeof data === 'string' ? data : data.role;
-        const passwordInput = data.password || '';
+        const passwordInput = data ? data.password : '';
 
         if (requestedRole === 'admin') {
             if (passwordInput !== ADMIN_PASSWORD) {
                 socket.emit('role-assigned', { 
                     success: false, 
-                    message: 'Authentication failed: Incorrect Password' 
+                    message: 'Admin Authentication Failed: Incorrect Password' 
                 });
                 return;
             }
@@ -44,36 +66,74 @@ io.on('connection', (socket) => {
             if (connectedAdmins.size < 2) {
                 connectedAdmins.add(socket.id);
                 socket.role = 'admin';
+                devicesMap.get(socket.id).role = 'admin';
                 socket.emit('role-assigned', { success: true, role: 'admin' });
             } else {
                 socket.role = 'listener';
+                devicesMap.get(socket.id).role = 'listener';
                 socket.emit('role-assigned', { 
                     success: true, 
                     role: 'listener', 
-                    message: 'Admin slots full (Max 2). Connected as Listener.' 
+                    message: 'Admin slots full. Connected as Listener.' 
                 });
             }
         } else {
+            // Listener password check
+            if (passwordInput !== LISTENER_PASSWORD) {
+                socket.emit('role-assigned', { 
+                    success: false, 
+                    message: 'Listener Access Failed: Incorrect Password' 
+                });
+                return;
+            }
+
             socket.role = 'listener';
+            devicesMap.get(socket.id).role = 'listener';
             socket.emit('role-assigned', { success: true, role: 'listener' });
         }
 
         socket.emit('sync-state', currentPlaybackState);
         socket.emit('update-song-list', trackQueue);
-        socket.emit('eq-update', currentEqMode);
+        socket.emit('eq-update', globalEqMode);
         socket.emit('sleep-timer-sync', sleepTimerData);
 
-        io.emit('stats-update', {
-            totalDevices: io.engine.clientsCount,
-            adminCount: connectedAdmins.size
-        });
+        broadcastDeviceList();
     });
 
+    // Time sync & latency tracking
     socket.on('time-sync-ping', (clientTime) => {
-        socket.emit('time-sync-pong', {
-            clientTime: clientTime,
-            serverTime: Date.now()
-        });
+        const serverTime = Date.now();
+        socket.emit('time-sync-pong', { clientTime, serverTime });
+    });
+
+    socket.on('report-latency', (latencyMs) => {
+        const dev = devicesMap.get(socket.id);
+        if (dev) {
+            dev.latency = Math.round(latencyMs);
+            broadcastDeviceList();
+        }
+    });
+
+    // Admin targeting individual devices for Spatial Surround & Equalizer
+    socket.on('admin-target-device-dsp', (data) => {
+        if (socket.role !== 'admin') return;
+        const { targetDeviceId, channel, volume, eq } = data;
+
+        const dev = devicesMap.get(targetDeviceId);
+        if (dev) {
+            if (channel !== undefined) dev.channel = channel;
+            if (volume !== undefined) dev.volume = volume;
+            if (eq !== undefined) dev.eq = eq;
+
+            // Direct payload to target device
+            io.to(targetDeviceId).emit('apply-custom-dsp', {
+                channel: dev.channel,
+                volume: dev.volume,
+                eq: dev.eq
+            });
+
+            broadcastDeviceList();
+        }
     });
 
     // Queue Management
@@ -99,27 +159,6 @@ io.on('connection', (socket) => {
         });
     });
 
-    // DSP Equalizer Broadcast
-    socket.on('admin-eq-change', (mode) => {
-        if (socket.role !== 'admin') return;
-        currentEqMode = mode;
-        io.emit('eq-update', currentEqMode);
-    });
-
-    // Cluster Sleep Timer
-    socket.on('admin-sleep-timer', (minutes) => {
-        if (socket.role !== 'admin') return;
-        sleepTimerData.endTime = minutes > 0 ? Date.now() + (minutes * 60 * 1000) : 0;
-        io.emit('sleep-timer-sync', sleepTimerData);
-    });
-
-    // Live Voice Paging Chunk Relay
-    socket.on('mic-audio-chunk', (chunk) => {
-        if (socket.role !== 'admin') return;
-        socket.broadcast.emit('receive-mic-chunk', chunk);
-    });
-
-    // Master Sync Control Actions
     socket.on('admin-audio-action', (data) => {
         if (socket.role !== 'admin') return;
 
@@ -140,14 +179,9 @@ io.on('connection', (socket) => {
     });
 
     socket.on('disconnect', () => {
-        if (socket.role === 'admin') {
-            connectedAdmins.delete(socket.id);
-        }
-        io.emit('stats-update', {
-            totalDevices: io.engine.clientsCount,
-            adminCount: connectedAdmins.size
-        });
-        console.log(`[Device Disconnected] ID: ${socket.id}`);
+        if (socket.role === 'admin') connectedAdmins.delete(socket.id);
+        devicesMap.delete(socket.id);
+        broadcastDeviceList();
     });
 });
 
