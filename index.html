@@ -35,14 +35,11 @@
             background: rgba(13, 17, 23, 0.8);
             box-shadow: 0 0 20px rgba(88, 166, 255, 0.2);
         }
-        #yt-player-container { display: none; }
 
         /* Track Queue Styling */
         .song-list { list-style: none; padding: 0; margin-top: 8px; max-height: 200px; overflow-y: auto; }
         .song-item { background: #0d1117; border: 1px solid #30363d; padding: 8px 12px; border-radius: 6px; margin-bottom: 6px; font-size: 13px; display: flex; justify-content: space-between; align-items: center; }
-        .song-tag { font-size: 10px; padding: 2px 6px; border-radius: 4px; font-weight: bold; text-transform: uppercase; }
-        .tag-local { background: #238636; color: white; }
-        .tag-yt { background: #da3633; color: white; }
+        .song-tag { font-size: 10px; padding: 2px 6px; border-radius: 4px; font-weight: bold; text-transform: uppercase; background: #238636; color: white; }
         .queue-btn { padding: 4px 8px; font-size: 11px; width: auto; margin: 0 0 0 6px; }
     </style>
 </head>
@@ -76,16 +73,10 @@
 
     <!-- Admin Master Music Controls -->
     <div id="admin-media-card" class="card" style="display: none;">
-        <h3 style="color: #58a6ff; margin-bottom: 10px; font-size: 15px;">Admin Master Music Source</h3>
+        <h3 style="color: #58a6ff; margin-bottom: 10px; font-size: 15px;">Admin Master Audio Source</h3>
         
-        <label>Option A: Local Audio File</label>
+        <label>Select Local Audio File</label>
         <input type="file" id="audio-file-input" accept="audio/*" onchange="loadLocalAudioFile(event)">
-
-        <hr style="border-color: #30363d; margin: 12px 0;">
-
-        <label>Option B: YouTube / Shorts Link</label>
-        <input type="text" id="yt-url-input" placeholder="e.g. https://youtube.com/shorts/s4tm8Ly3col">
-        <button class="btn-secondary" onclick="queueYouTubeSong()">Add YouTube Track to Queue</button>
 
         <div style="margin-top: 12px;">
             <label>Playback Speed Multiplier</label>
@@ -135,10 +126,10 @@
 
     <!-- Active Song Queue -->
     <div class="card">
-        <h3 style="color: #58a6ff; margin-bottom: 8px; font-size: 15px;">🎵 Active Song Queue</h3>
-        <p class="info-text">Track queue synchronized across cluster:</p>
+        <h3 style="color: #58a6ff; margin-bottom: 8px; font-size: 15px;">🎵 Active Track Queue</h3>
+        <p class="info-text">Uploaded tracks synchronized across cluster:</p>
         <ul id="song-playlist" class="song-list">
-            <li class="song-item" style="color: #8b949e;">No songs in queue</li>
+            <li class="song-item" style="color: #8b949e;">No tracks in queue</li>
         </ul>
     </div>
 
@@ -185,19 +176,18 @@
         <button class="btn-resync" onclick="forceResync()">Force Manual Resync</button>
     </div>
 
-    <!-- Audio Elements -->
+    <!-- Audio Element -->
     <audio id="audio-player" style="display: none;"></audio>
-    <div id="yt-player-container"><div id="yt-player"></div></div>
 
     <script>
         const socket = io();
         let serverOffset = 0;
         let localHardwareDelayMs = 0;
         let currentRole = 'unassigned';
-        let currentSourceType = 'local';
         let currentPlaybackRate = 1.0;
         let visualizerMode = 'bars';
         let sleepTimerInterval = null;
+        let audioUnlocked = false;
 
         const audioPlayer = document.getElementById('audio-player');
 
@@ -215,27 +205,20 @@
         let mediaRecorder;
         let micStream;
 
-        // YouTube IFrame Player Instance
-        let ytPlayer;
-        let isYtApiReady = false;
-
         // Visualizer Setup
         const canvas = document.getElementById('visualizer-canvas');
         const canvasCtx = canvas.getContext('2d');
 
-        // YouTube API Load
-        const tag = document.createElement('script');
-        tag.src = "https://www.youtube.com/iframe_api";
-        const firstScriptTag = document.getElementsByTagName('script')[0];
-        firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
-
-        function onYouTubeIframeAPIReady() {
-            ytPlayer = new YT.Player('yt-player', {
-                height: '0', width: '0', videoId: '',
-                playerVars: { 'autoplay': 0, 'controls': 0 },
-                events: { 'onReady': () => { isYtApiReady = true; } }
-            });
-        }
+        // Universal screen touch unlocker for Listener devices
+        document.body.addEventListener('click', () => {
+            if (!audioUnlocked) {
+                initAudioEngine();
+                if (audioCtx && audioCtx.state === 'suspended') {
+                    audioCtx.resume();
+                }
+                audioUnlocked = true;
+            }
+        }, { once: false });
 
         function initAudioEngine() {
             if (isAudioEngineInitialized) return;
@@ -375,7 +358,6 @@
                     clearInterval(sleepTimerInterval);
                     timerEl.innerText = '⏱️ Sleep Timer Ended - Playback Stopped';
                     audioPlayer.pause();
-                    if (ytPlayer && ytPlayer.pauseVideo) ytPlayer.pauseVideo();
                 } else {
                     const m = Math.floor(remainingSec / 60);
                     const s = remainingSec % 60;
@@ -467,7 +449,7 @@
         socket.on('update-song-list', (queue) => {
             const playlistEl = document.getElementById('song-playlist');
             if (!queue || queue.length === 0) {
-                playlistEl.innerHTML = '<li class="song-item" style="color: #8b949e;">No songs in queue</li>';
+                playlistEl.innerHTML = '<li class="song-item" style="color: #8b949e;">No tracks in queue</li>';
                 return;
             }
 
@@ -475,7 +457,7 @@
                 <li class="song-item">
                     <span>${idx === 0 ? '▶️' : (idx + 1) + '.'} ${song.title}</span>
                     <div>
-                        <span class="song-tag ${song.type === 'YouTube' ? 'tag-yt' : 'tag-local'}">${song.type}</span>
+                        <span class="song-tag">LOCAL</span>
                         ${currentRole === 'admin' ? `<button class="btn-secondary queue-btn" onclick="playQueueIndex(${idx})">Play</button>` : ''}
                     </div>
                 </li>
@@ -495,42 +477,14 @@
 
             const file = event.target.files[0];
             if (file) {
-                currentSourceType = 'local';
                 const objectUrl = URL.createObjectURL(file);
                 audioPlayer.src = objectUrl;
 
                 socket.emit('add-song-to-queue', {
                     title: file.name,
-                    type: 'Local',
-                    url: objectUrl
+                    type: 'Local'
                 });
             }
-        }
-
-        function extractYouTubeId(url) {
-            if (!url) return '';
-            url = url.trim();
-            const regExp = /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=|shorts\/)|youtu\.be\/)([^"&?\/\s]{11})/;
-            const match = url.match(regExp);
-            return (match && match[1]) ? match[1] : (url.length === 11 ? url : null);
-        }
-
-        function queueYouTubeSong() {
-            if (currentRole !== 'admin') return;
-            const inputVal = document.getElementById('yt-url-input').value;
-            const ytId = extractYouTubeId(inputVal);
-
-            if (!ytId) {
-                alert("Invalid YouTube URL!");
-                return;
-            }
-
-            socket.emit('add-song-to-queue', {
-                title: `YouTube Track (${ytId})`,
-                type: 'YouTube',
-                ytId: ytId
-            });
-            document.getElementById('yt-url-input').value = '';
         }
 
         function changePlaybackRate(rate) {
@@ -543,62 +497,47 @@
         function sendAdminAction(action) {
             if (currentRole !== 'admin') return;
 
-            let currentSeek = 0;
-            let ytId = '';
-
-            if (currentSourceType === 'local') {
-                currentSeek = audioPlayer.currentTime || 0;
-            } else if (currentSourceType === 'youtube' && ytPlayer && ytPlayer.getCurrentTime) {
-                currentSeek = ytPlayer.getCurrentTime() || 0;
-            }
+            const currentSeek = audioPlayer.currentTime || 0;
 
             socket.emit('admin-audio-action', {
                 action: action,
-                sourceType: currentSourceType,
                 timestamp: Date.now() + serverOffset + localHardwareDelayMs,
                 seekPosition: currentSeek,
                 playbackRate: currentPlaybackRate
             });
         }
 
-        socket.on('audio-sync-receive', (data) => {
-            currentSourceType = data.sourceType || 'local';
+        socket.on('audio-sync-receive', async (data) => {
             currentPlaybackRate = data.playbackRate || 1.0;
 
-            if (currentSourceType === 'local') {
-                initAudioEngine();
-                if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
-                if (ytPlayer && ytPlayer.pauseVideo) ytPlayer.pauseVideo();
-
-                audioPlayer.playbackRate = currentPlaybackRate;
-
-                if (data.action === 'play') {
-                    const now = Date.now() + serverOffset + localHardwareDelayMs;
-                    const timePassed = ((now - data.startTimestamp) / 1000) * currentPlaybackRate;
-                    const targetSeek = Math.max(0, data.seekPosition + timePassed);
-
-                    if (Math.abs(audioPlayer.currentTime - targetSeek) > 0.08) {
-                        audioPlayer.currentTime = targetSeek;
-                    }
-                    audioPlayer.play().catch(e => console.log(e));
-                } else if (data.action === 'pause') {
-                    audioPlayer.pause();
+            initAudioEngine();
+            if (audioCtx && audioCtx.state === 'suspended') {
+                try {
+                    await audioCtx.resume();
+                } catch(e) {
+                    console.log("AudioContext resume failed:", e);
                 }
-            } else if (currentSourceType === 'youtube' && isYtApiReady && ytPlayer) {
+            }
+
+            audioPlayer.playbackRate = currentPlaybackRate;
+
+            if (data.action === 'play') {
+                const now = Date.now() + serverOffset + localHardwareDelayMs;
+                const timePassed = ((now - data.startTimestamp) / 1000) * currentPlaybackRate;
+                const targetSeek = Math.max(0, data.seekPosition + timePassed);
+
+                if (Math.abs(audioPlayer.currentTime - targetSeek) > 0.08) {
+                    audioPlayer.currentTime = targetSeek;
+                }
+
+                let playPromise = audioPlayer.play();
+                if (playPromise !== undefined) {
+                    playPromise.catch(error => {
+                        console.log("Autoplay blocked by browser.");
+                    });
+                }
+            } else if (data.action === 'pause') {
                 audioPlayer.pause();
-
-                if (ytPlayer.setPlaybackRate) ytPlayer.setPlaybackRate(currentPlaybackRate);
-
-                if (data.action === 'play') {
-                    const now = Date.now() + serverOffset + localHardwareDelayMs;
-                    const timePassed = ((now - data.startTimestamp) / 1000) * currentPlaybackRate;
-                    const targetSeek = Math.max(0, data.seekPosition + timePassed);
-
-                    ytPlayer.loadVideoById(data.youtubeId, targetSeek);
-                    ytPlayer.playVideo();
-                } else if (data.action === 'pause') {
-                    ytPlayer.pauseVideo();
-                }
             }
         });
 
@@ -635,12 +574,8 @@
         }
 
         function updateVolume(val) {
-            if (currentSourceType === 'local') {
-                if (!isAudioEngineInitialized) initAudioEngine();
-                gainNode.gain.value = parseFloat(val);
-            } else if (currentSourceType === 'youtube' && ytPlayer && ytPlayer.setVolume) {
-                ytPlayer.setVolume(val * 100);
-            }
+            if (!isAudioEngineInitialized) initAudioEngine();
+            gainNode.gain.value = parseFloat(val);
             document.getElementById('val-vol').innerText = `${Math.round(val * 100)}%`;
         }
     </script>
