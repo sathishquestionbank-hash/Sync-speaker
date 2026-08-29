@@ -9,15 +9,17 @@ const io = new Server(server, {
     cors: { origin: "*", methods: ["GET", "POST"] }
 });
 
-// Configuration
-const ADMIN_PASSWORD = "1234"; // Set your desired Admin password here
+const ADMIN_PASSWORD = "1234";
 
 app.use(express.static(__dirname));
 app.use(express.static(path.join(__dirname, 'public')));
 
 let connectedAdmins = new Set();
+let trackQueue = [];
+let currentEqMode = 'flat';
+let sleepTimerData = { endTime: 0 };
 let currentPlaybackState = {
-    sourceType: 'local', // 'local' or 'youtube'
+    sourceType: 'local',
     youtubeId: '',
     isPlaying: false,
     startTimestamp: 0,
@@ -28,7 +30,6 @@ let currentPlaybackState = {
 io.on('connection', (socket) => {
     console.log(`[Device Connected] ID: ${socket.id}`);
 
-    // Handle Role Registration and Passcode Verification
     socket.on('register-role', (data) => {
         const requestedRole = typeof data === 'string' ? data : data.role;
         const passwordInput = data.password || '';
@@ -45,11 +46,7 @@ io.on('connection', (socket) => {
             if (connectedAdmins.size < 2) {
                 connectedAdmins.add(socket.id);
                 socket.role = 'admin';
-                socket.emit('role-assigned', { 
-                    success: true, 
-                    role: 'admin', 
-                    count: connectedAdmins.size 
-                });
+                socket.emit('role-assigned', { success: true, role: 'admin' });
             } else {
                 socket.role = 'listener';
                 socket.emit('role-assigned', { 
@@ -63,8 +60,10 @@ io.on('connection', (socket) => {
             socket.emit('role-assigned', { success: true, role: 'listener' });
         }
 
-        // Catch new device up with current playback status
         socket.emit('sync-state', currentPlaybackState);
+        socket.emit('update-song-list', trackQueue);
+        socket.emit('eq-update', currentEqMode);
+        socket.emit('sleep-timer-sync', sleepTimerData);
 
         io.emit('stats-update', {
             totalDevices: io.engine.clientsCount,
@@ -72,7 +71,6 @@ io.on('connection', (socket) => {
         });
     });
 
-    // Precision Time-Sync Ping-Pong
     socket.on('time-sync-ping', (clientTime) => {
         socket.emit('time-sync-pong', {
             clientTime: clientTime,
@@ -80,7 +78,55 @@ io.on('connection', (socket) => {
         });
     });
 
-    // Handle Admin Playback, Speed & Track Commands
+    // Queue Management
+    socket.on('add-song-to-queue', (song) => {
+        if (socket.role !== 'admin') return;
+        trackQueue.push(song);
+        io.emit('update-song-list', trackQueue);
+    });
+
+    socket.on('admin-play-queue-index', (index) => {
+        if (socket.role !== 'admin' || !trackQueue[index]) return;
+        const song = trackQueue[index];
+        
+        currentPlaybackState.sourceType = song.type === 'YouTube' ? 'youtube' : 'local';
+        currentPlaybackState.youtubeId = song.ytId || '';
+        currentPlaybackState.isPlaying = true;
+        currentPlaybackState.startTimestamp = Date.now();
+        currentPlaybackState.seekPosition = 0;
+
+        io.emit('audio-sync-receive', {
+            action: 'play',
+            sourceType: currentPlaybackState.sourceType,
+            youtubeId: currentPlaybackState.youtubeId,
+            startTimestamp: currentPlaybackState.startTimestamp,
+            seekPosition: 0,
+            playbackRate: currentPlaybackState.playbackRate,
+            serverTime: Date.now()
+        });
+    });
+
+    // DSP Equalizer Broadcast
+    socket.on('admin-eq-change', (mode) => {
+        if (socket.role !== 'admin') return;
+        currentEqMode = mode;
+        io.emit('eq-update', currentEqMode);
+    });
+
+    // Cluster Sleep Timer
+    socket.on('admin-sleep-timer', (minutes) => {
+        if (socket.role !== 'admin') return;
+        sleepTimerData.endTime = minutes > 0 ? Date.now() + (minutes * 60 * 1000) : 0;
+        io.emit('sleep-timer-sync', sleepTimerData);
+    });
+
+    // Live Voice Paging Chunk Relay
+    socket.on('mic-audio-chunk', (chunk) => {
+        if (socket.role !== 'admin') return;
+        socket.broadcast.emit('receive-mic-chunk', chunk);
+    });
+
+    // Master Sync Control Actions
     socket.on('admin-audio-action', (data) => {
         if (socket.role !== 'admin') return;
 
@@ -118,5 +164,5 @@ io.on('connection', (socket) => {
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, '0.0.0.0', () => {
-    console.log(`Sync Speaker Studio server running on port ${PORT}`);
+    console.log(`Sync Speaker Studio running on port ${PORT}`);
 });
