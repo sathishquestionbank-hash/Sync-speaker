@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sync Speaker Studio - Master DSP Engine</title>
+    <title>Sync Speaker Studio</title>
     <script src="/socket.io/socket.io.js"></script>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -15,12 +15,12 @@
         button { padding: 12px 16px; margin: 6px 0; font-size: 14px; font-weight: bold; border: none; border-radius: 6px; cursor: pointer; width: 100%; }
         .btn-admin { background: #238636; color: white; }
         .btn-listener { background: #1f6feb; color: white; }
-        .btn-play { background: #238636; color: white; margin-top: 8px; }
-        .btn-pause { background: #da3633; color: white; }
+        .btn-play { background: #238636; color: white; margin-top: 8px; font-size: 16px; }
+        .btn-pause { background: #da3633; color: white; font-size: 16px; }
         .control-group { margin: 12px 0; }
         label { display: block; font-size: 12px; color: #8b949e; margin-bottom: 4px; font-weight: 600; text-transform: uppercase; }
         input[type="range"] { width: 100%; margin: 4px 0; accent-color: #58a6ff; }
-        select, input[type="file"] { width: 100%; padding: 8px; border-radius: 6px; border: 1px solid #30363d; background: #0d1117; color: #c9d1d9; }
+        input[type="password"], select, input[type="file"] { width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #30363d; background: #0d1117; color: #c9d1d9; margin-bottom: 8px; }
         .info-text { font-size: 12px; color: #8b949e; }
     </style>
 </head>
@@ -28,74 +28,55 @@
 
     <h1>Sync Speaker Studio</h1>
 
-    <!-- Network & Device Info -->
+    <!-- Network & Status Info -->
     <div class="card center">
         <p>Role: <span id="role-display" class="status-val">Unassigned</span> | Status: <span id="status-display" class="status-val">Connecting...</span></p>
         <p id="stats-display" class="info-text" style="margin-top: 4px;">Devices: 0 | Admins: 0/2</p>
         <p id="latency-display" class="info-text">Latency Offset: 0 ms</p>
     </div>
 
-    <!-- Role Selector -->
+    <!-- Role Selection & Password Box -->
     <div id="role-selection" class="card center">
-        <h3 style="margin-bottom: 10px;">Select Device Role</h3>
-        <button class="btn-admin" onclick="joinAs('admin')">Join as Admin (Controller)</button>
+        <h3 style="margin-bottom: 12px;">Select Device Role</h3>
+        
+        <div style="margin-bottom: 15px;">
+            <label style="text-align: left;">Admin Passcode Required:</label>
+            <input type="password" id="admin-passcode" placeholder="Enter Admin Password (Default: 1234)">
+            <button class="btn-admin" onclick="joinAs('admin')">Login as Admin (Controller)</button>
+        </div>
+
+        <hr style="border-color: #30363d; margin: 15px 0;">
+
         <button class="btn-listener" onclick="joinAs('listener')">Join as Listener</button>
     </div>
 
-    <!-- Master Control & File Source -->
+    <!-- Audio Player & Song Controls -->
     <div class="card">
-        <label>1. Select Audio Track</label>
+        <h3 style="color: #58a6ff; margin-bottom: 10px; font-size: 15px;">Audio Track Source</h3>
         <input type="file" id="audio-file-input" accept="audio/*" onchange="loadAudioFile(event)">
         
         <div id="admin-controls" style="display: none; margin-top: 10px;">
-            <label>Master Sync Actions</label>
+            <label>Master Playback Trigger</label>
             <button class="btn-play" onclick="sendAdminAction('play')">PLAY / RESYNC ALL DEVICES</button>
             <button class="btn-pause" onclick="sendAdminAction('pause')">PAUSE ALL DEVICES</button>
         </div>
     </div>
 
-    <!-- Surround / Channel Spatializer -->
+    <!-- Spatial & Speaker Mode -->
     <div class="card">
-        <h3 style="color: #58a6ff; margin-bottom: 10px; font-size: 15px;">2. Surround & Channel Spatializer</h3>
+        <h3 style="color: #58a6ff; margin-bottom: 10px; font-size: 15px;">Speaker Output Configuration</h3>
         <div class="control-group">
-            <label>Speaker Output Channel</label>
+            <label>Speaker Channel Mode</label>
             <select id="channel-select" onchange="updateSpatialPanner()">
-                <option value="center">Center / Stereo Full Mix</option>
+                <option value="center">Center / Stereo Mix</option>
                 <option value="left">Left Speaker Only</option>
                 <option value="right">Right Speaker Only</option>
-                <option value="surround">Surround Spatial Mode</option>
-                <option value="sub">Subwoofer / LFE Mode (Low-Pass Filter)</option>
+                <option value="sub">Subwoofer / Bass Cutoff</option>
             </select>
         </div>
         <div class="control-group">
-            <label>Stereo Pan (-1 Left to +1 Right)</label>
+            <label>Stereo Panner (-1 Left to +1 Right)</label>
             <input type="range" id="pan-slider" min="-1" max="1" step="0.1" value="0" oninput="updatePan(this.value)">
-        </div>
-    </div>
-
-    <!-- 5-Band Equalizer -->
-    <div class="card">
-        <h3 style="color: #58a6ff; margin-bottom: 10px; font-size: 15px;">3. 5-Band Audio Equalizer</h3>
-        
-        <div class="control-group">
-            <label>Sub-Bass (60 Hz): <span id="val-eq-0">0 dB</span></label>
-            <input type="range" min="-12" max="12" value="0" step="1" oninput="updateEQ(0, this.value)">
-        </div>
-        <div class="control-group">
-            <label>Mid-Bass (250 Hz): <span id="val-eq-1">0 dB</span></label>
-            <input type="range" min="-12" max="12" value="0" step="1" oninput="updateEQ(1, this.value)">
-        </div>
-        <div class="control-group">
-            <label>Midrange (1 kHz): <span id="val-eq-2">0 dB</span></label>
-            <input type="range" min="-12" max="12" value="0" step="1" oninput="updateEQ(2, this.value)">
-        </div>
-        <div class="control-group">
-            <label>Treble (4 kHz): <span id="val-eq-3">0 dB</span></label>
-            <input type="range" min="-12" max="12" value="0" step="1" oninput="updateEQ(3, this.value)">
-        </div>
-        <div class="control-group">
-            <label>Air Highs (12 kHz): <span id="val-eq-4">0 dB</span></label>
-            <input type="range" min="-12" max="12" value="0" step="1" oninput="updateEQ(4, this.value)">
         </div>
     </div>
 
@@ -114,13 +95,12 @@
         let serverOffset = 0;
         const audioPlayer = document.getElementById('audio-player');
 
-        // Web Audio API DSP Nodes
+        // Web Audio Nodes
         let audioCtx;
         let sourceNode;
         let gainNode;
         let stereoPanner;
         let subLowPass;
-        let eqFilters = [];
         let isAudioEngineInitialized = false;
 
         function initAudioEngine() {
@@ -132,35 +112,16 @@
             sourceNode = audioCtx.createMediaElementSource(audioPlayer);
             gainNode = audioCtx.createGain();
 
-            // Stereo Panner Node Setup
             if (audioCtx.createStereoPanner) {
                 stereoPanner = audioCtx.createStereoPanner();
             }
 
-            // Subwoofer Cutoff Filter Setup
             subLowPass = audioCtx.createBiquadFilter();
             subLowPass.type = 'lowpass';
             subLowPass.frequency.value = 20000;
 
-            // 5-Band Equalizer Node Setup
-            const freqs = [60, 250, 1000, 4000, 12000];
-            const filterTypes = ['lowshelf', 'peaking', 'peaking', 'peaking', 'highshelf'];
-
-            eqFilters = freqs.map((freq, i) => {
-                const filter = audioCtx.createBiquadFilter();
-                filter.type = filterTypes[i];
-                filter.frequency.value = freq;
-                filter.gain.value = 0;
-                return filter;
-            });
-
-            // Connect DSP Chain: Source -> EQ0-4 -> Sub Filter -> Panner -> Master Gain -> Destination
+            // Pipeline: Source -> Sub Filter -> Panner -> Gain -> Destination
             let currentNode = sourceNode;
-            eqFilters.forEach(filter => {
-                currentNode.connect(filter);
-                currentNode = filter;
-            });
-
             currentNode.connect(subLowPass);
             currentNode = subLowPass;
 
@@ -175,7 +136,6 @@
             isAudioEngineInitialized = true;
         }
 
-        // Measure network clock offset relative to server
         function measureLatency() {
             const start = Date.now();
             socket.emit('time-sync-ping', start);
@@ -192,10 +152,16 @@
         setInterval(measureLatency, 4000);
 
         function joinAs(role) {
-            socket.emit('register-role', role);
+            const password = document.getElementById('admin-passcode').value;
+            socket.emit('register-role', { role: role, password: password });
         }
 
         socket.on('role-assigned', (data) => {
+            if (!data.success) {
+                alert(data.message || 'Authentication Failed');
+                return;
+            }
+
             document.getElementById('role-display').innerText = data.role.toUpperCase();
             document.getElementById('status-display').innerText = 'Connected';
             document.getElementById('role-selection').style.display = 'none';
@@ -221,7 +187,7 @@
             if (file) {
                 const objectUrl = URL.createObjectURL(file);
                 audioPlayer.src = objectUrl;
-                alert("Audio file loaded into DSP Engine!");
+                alert("Audio file ready for playback!");
             }
         }
 
@@ -247,13 +213,12 @@
                 if (Math.abs(audioPlayer.currentTime - targetSeek) > 0.08) {
                     audioPlayer.currentTime = targetSeek;
                 }
-                audioPlayer.play().catch(e => console.log("Tap screen to grant audio permission", e));
+                audioPlayer.play().catch(e => console.log("Tap screen to allow sound playback", e));
             } else if (data.action === 'pause') {
                 audioPlayer.pause();
             }
         });
 
-        // DSP Controls handlers
         function updateSpatialPanner() {
             if (!isAudioEngineInitialized) initAudioEngine();
             const mode = document.getElementById('channel-select').value;
@@ -269,22 +234,13 @@
                 subLowPass.frequency.value = 20000;
             } else if (mode === 'sub') {
                 if (stereoPanner) stereoPanner.pan.value = 0;
-                subLowPass.frequency.value = 120; // Cut off frequencies above 120 Hz
-            } else if (mode === 'surround') {
-                if (stereoPanner) stereoPanner.pan.value = 0;
-                subLowPass.frequency.value = 20000;
+                subLowPass.frequency.value = 120;
             }
         }
 
         function updatePan(val) {
             if (!isAudioEngineInitialized) initAudioEngine();
             if (stereoPanner) stereoPanner.pan.value = parseFloat(val);
-        }
-
-        function updateEQ(index, val) {
-            if (!isAudioEngineInitialized) initAudioEngine();
-            eqFilters[index].gain.value = parseFloat(val);
-            document.getElementById(`val-eq-${index}`).innerText = `${val} dB`;
         }
 
         function updateVolume(val) {
