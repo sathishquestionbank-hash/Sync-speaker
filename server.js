@@ -9,6 +9,9 @@ const io = new Server(server, {
     cors: { origin: "*", methods: ["GET", "POST"] }
 });
 
+// Admin Passcode Configuration
+const ADMIN_PASSWORD = "1234"; // <-- Change your Admin Password here!
+
 // Serve static files from root and public directories
 app.use(express.static(__dirname));
 app.use(express.static(path.join(__dirname, 'public')));
@@ -23,26 +26,42 @@ let currentPlaybackState = {
 io.on('connection', (socket) => {
     console.log(`[Device Connected] ID: ${socket.id}`);
 
-    // Register Role (Max 2 Admins allowed)
-    socket.on('register-role', (requestedRole) => {
+    // Register Role with Password Authentication for Admin
+    socket.on('register-role', (data) => {
+        const requestedRole = typeof data === 'string' ? data : data.role;
+        const passwordInput = data.password || '';
+
         if (requestedRole === 'admin') {
+            if (passwordInput !== ADMIN_PASSWORD) {
+                socket.emit('role-assigned', { 
+                    success: false, 
+                    message: 'Incorrect Admin Password!' 
+                });
+                return;
+            }
+
             if (connectedAdmins.size < 2) {
                 connectedAdmins.add(socket.id);
                 socket.role = 'admin';
-                socket.emit('role-assigned', { role: 'admin', count: connectedAdmins.size });
+                socket.emit('role-assigned', { 
+                    success: true, 
+                    role: 'admin', 
+                    count: connectedAdmins.size 
+                });
             } else {
                 socket.role = 'listener';
                 socket.emit('role-assigned', { 
+                    success: true, 
                     role: 'listener', 
                     message: 'Admin slots full (Max 2). Connected as Listener.' 
                 });
             }
         } else {
             socket.role = 'listener';
-            socket.emit('role-assigned', { role: 'listener' });
+            socket.emit('role-assigned', { success: true, role: 'listener' });
         }
 
-        // Send latest sync state to freshly connected client
+        // Send current sync state to freshly connected client
         socket.emit('sync-state', currentPlaybackState);
 
         io.emit('stats-update', {
@@ -59,7 +78,7 @@ io.on('connection', (socket) => {
         });
     });
 
-    // Handle Admin Master Audio Commands
+    // Handle Admin Master Audio Sync Events
     socket.on('admin-audio-action', (data) => {
         if (socket.role !== 'admin') return;
 
