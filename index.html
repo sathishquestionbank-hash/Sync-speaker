@@ -3,25 +3,27 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sync Speaker Studio - Ultra</title>
+    <title>Sync Speaker Studio - Ultra Engine</title>
     <script src="/socket.io/socket.io.js"></script>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0b0e14; color: #c9d1d9; text-align: center; padding: 15px; transition: background 0.2s; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0b0e14; color: #c9d1d9; text-align: center; padding: 15px; }
         h1 { margin: 8px 0; color: #58a6ff; font-size: 22px; }
-        .card { background: rgba(22, 27, 34, 0.95); border: 1px solid #30363d; border-radius: 10px; padding: 14px; margin: 10px auto; max-width: 540px; text-align: left; }
+        .card { background: rgba(22, 27, 34, 0.95); border: 1px solid #30363d; border-radius: 10px; padding: 14px; margin: 10px auto; max-width: 560px; text-align: left; }
         .center { text-align: center; }
         .status-val { font-weight: bold; color: #f2cc60; }
         .error-msg { color: #f85149; font-weight: bold; font-size: 13px; margin-top: 6px; display: none; }
-        button { padding: 10px 14px; margin: 4px 0; font-size: 13px; font-weight: bold; border: none; border-radius: 6px; cursor: pointer; width: 100%; transition: opacity 0.2s; }
+        button { padding: 9px 12px; margin: 3px 0; font-size: 12px; font-weight: bold; border: none; border-radius: 6px; cursor: pointer; width: 100%; transition: opacity 0.2s; }
         button:active { opacity: 0.8; }
         .btn-admin { background: #238636; color: white; }
         .btn-listener { background: #1f6feb; color: white; }
         .btn-play { background: #238636; color: white; margin-top: 6px; }
         .btn-pause { background: #da3633; color: white; }
-        .btn-mic { background: #8957e5; color: white; font-size: 14px; }
+        .btn-mic { background: #8957e5; color: white; font-size: 13px; }
         .btn-opt { background: #21262d; color: #c9d1d9; border: 1px solid #30363d; width: auto; flex: 1; }
         .btn-opt.active { background: #1f6feb; color: white; border-color: #58a6ff; }
+        .btn-danger { background: #da363322; color: #f85149; border: 1px solid #da3633; width: auto; padding: 3px 8px; font-size: 10px; }
+        
         label { display: block; font-size: 11px; color: #8b949e; margin-bottom: 3px; font-weight: 600; text-transform: uppercase; }
         input[type="range"] { width: 100%; margin: 3px 0; accent-color: #58a6ff; }
         input[type="text"], input[type="password"], select, input[type="file"] { width: 100%; padding: 8px; border-radius: 6px; border: 1px solid #30363d; background: #0d1117; color: #c9d1d9; margin-bottom: 8px; font-size: 13px; }
@@ -32,15 +34,17 @@
         .device-id { font-weight: bold; color: #58a6ff; }
         .eq-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; margin-top: 6px; }
         
-        #spatial-canvas { background: #0d1117; border: 1px solid #30363d; border-radius: 8px; width: 100%; height: 200px; cursor: crosshair; }
         .timeline-container { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
         .timeline-time { font-size: 11px; font-family: monospace; color: #8b949e; }
-        .playlist-container { background: #0d1117; border: 1px solid #30363d; border-radius: 6px; max-height: 140px; overflow-y: auto; margin-top: 8px; }
+        
+        .playlist-container { background: #0d1117; border: 1px solid #30363d; border-radius: 6px; max-height: 180px; overflow-y: auto; margin-top: 8px; }
         .playlist-item { display: flex; justify-content: space-between; align-items: center; padding: 8px 10px; border-bottom: 1px solid #21262d; font-size: 12px; cursor: pointer; }
         .playlist-item.active { background: #1f6feb22; border-left: 3px solid #58a6ff; font-weight: bold; color: #58a6ff; }
-        
+        .playlist-controls { display: flex; gap: 4px; align-items: center; }
+
         .unlock-overlay { background: #238636; color: white; padding: 12px; border-radius: 6px; margin-bottom: 10px; font-weight: bold; text-align: center; cursor: pointer; }
         .controls-row { display: flex; gap: 6px; margin-top: 6px; }
+        .preset-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; margin-top: 6px; }
     </style>
 </head>
 <body>
@@ -49,13 +53,13 @@
 
     <div class="card center">
         <p>Room: <span id="room-display" class="status-val">MainStudio</span> | Role: <span id="role-display" class="status-val">Unassigned</span></p>
-        <p id="latency-display" class="info-text" style="margin-top: 4px;">Status: Standby | Latency: 0 ms | Drift: 0ms</p>
+        <p id="latency-display" class="info-text" style="margin-top: 4px;">Status: Standby | Latency: 0 ms</p>
     </div>
 
-    <!-- Audio Autoplay Unlock Prompt -->
+    <!-- Autoplay Audio Engine Unlock -->
     <div id="unlock-card" class="card" style="display:none;">
         <div class="unlock-overlay" onclick="enableAudioEngine()">
-            🔊 Click Here to Enable Audio Engine on Speaker Device
+            🔊 Click to Connect Audio Engine on Speaker Node
         </div>
     </div>
 
@@ -73,24 +77,12 @@
         <p id="auth-error-msg" class="error-msg center"></p>
     </div>
 
-    <!-- 2D Spatial Map (Admin Only) -->
-    <div id="spatial-map-card" class="card" style="display: none;">
-        <h3 style="color: #58a6ff; margin-bottom: 6px; font-size: 15px;">🌐 Interactive 2D Spatial Positioning</h3>
-        <p class="info-text" style="margin-bottom: 8px;">Drag nodes around the central audio transmitter to adjust real-time stereo panning.</p>
-        <canvas id="spatial-canvas" width="500" height="200"></canvas>
-    </div>
-
-    <!-- Connected Devices (Admin Only) -->
-    <div id="admin-devices-card" class="card" style="display: none;">
-        <h3 style="color: #58a6ff; margin-bottom: 8px; font-size: 15px;">📱 Connected Nodes</h3>
-        <div id="connected-devices-container"></div>
-    </div>
-
-    <!-- Global Playlist (Visible to All Users) -->
+    <!-- Global Interactive Playlist Card (Visible to All) -->
     <div id="playlist-card" class="card" style="display: none;">
-        <h3 style="color: #58a6ff; margin-bottom: 8px; font-size: 15px;">🎶 Room Playlist</h3>
+        <h3 style="color: #58a6ff; margin-bottom: 8px; font-size: 15px;">🎶 Interactive Playlist Engine</h3>
+        
         <div id="upload-section" style="display: none;">
-            <label>Queue Audio Files (Admin Upload):</label>
+            <label>Upload Audio Tracks (Admin Upload):</label>
             <input type="file" id="audio-file-input" accept="audio/*" multiple onchange="uploadFilesToServer(event)">
         </div>
         
@@ -102,9 +94,22 @@
         <div id="playlist-container" class="playlist-container"></div>
     </div>
 
-    <!-- Master Controller (Admin Only) -->
+    <!-- Master DSP & Equalizer Presets (Admin Only) -->
+    <div id="dsp-preset-card" class="card" style="display: none;">
+        <h3 style="color: #58a6ff; margin-bottom: 6px; font-size: 15px;">🎛️ Master Room Equalizer Presets</h3>
+        <p class="info-text">Apply instant EQ curves across all active nodes in real time.</p>
+        <div class="preset-grid">
+            <button class="btn-opt" onclick="applyDspPreset('flat')">Flat</button>
+            <button class="btn-opt" onclick="applyDspPreset('bass-boost')">Bass</button>
+            <button class="btn-opt" onclick="applyDspPreset('club')">Club</button>
+            <button class="btn-opt" onclick="applyDspPreset('vocal')">Vocal</button>
+            <button class="btn-opt" onclick="applyDspPreset('acoustic')">Acoustic</button>
+        </div>
+    </div>
+
+    <!-- Master Playback Controller (Admin Only) -->
     <div id="admin-media-card" class="card" style="display: none;">
-        <h3 style="color: #58a6ff; margin-bottom: 8px; font-size: 15px;">🎼 Master Controls & DJ Paging</h3>
+        <h3 style="color: #58a6ff; margin-bottom: 8px; font-size: 15px;">🎼 Master Media Console & Live DJ Page</h3>
         
         <button id="mic-btn" class="btn-mic" onmousedown="startMicPaging()" onmouseup="stopMicPaging()" onmouseleave="stopMicPaging()">🎙️ Hold to Speak (Live DJ Page)</button>
 
@@ -114,20 +119,16 @@
             <span id="total-time-display" class="timeline-time">00:00</span>
         </div>
 
-        <div style="margin-top: 10px;">
-            <label>Playback Pitch & Speed (Pitch Shift: <span id="pitch-val">1.0x</span>)</label>
-            <input type="range" min="0.5" max="1.5" step="0.05" value="1.0" oninput="changePitch(this.value)">
-        </div>
-
-        <div style="margin-top: 6px;">
-            <label>Crossfade Duration (<span id="xfade-val">3s</span>)</label>
-            <input type="range" min="0" max="10" step="1" value="3" oninput="changeCrossfade(this.value)">
-        </div>
-
         <div class="controls-row">
             <button class="btn-play" onclick="sendAdminAction('play')">PLAY</button>
             <button class="btn-pause" onclick="sendAdminAction('pause')">PAUSE</button>
         </div>
+    </div>
+
+    <!-- Connected Devices & Delay Tuning (Admin Only) -->
+    <div id="admin-devices-card" class="card" style="display: none;">
+        <h3 style="color: #58a6ff; margin-bottom: 8px; font-size: 15px;">📱 Active Studio Speaker Nodes</h3>
+        <div id="connected-devices-container"></div>
     </div>
 
     <!-- Visualizer Frame -->
@@ -150,7 +151,7 @@
         let serverOffset = 0;
 
         // Web Audio API Global Engine State
-        let audioCtx, bufferSource, currentAudioBuffer, gainNode, bassFilter, midFilter, trebleFilter, stereoPanner, analyserNode;
+        let audioCtx, bufferSource, currentAudioBuffer, gainNode, bassFilter, midFilter, trebleFilter, delayNode, analyserNode;
         let isAudioInit = false;
         let isPlayingState = false;
         let startTimeAcc = 0;
@@ -181,19 +182,17 @@
             analyserNode = audioCtx.createAnalyser();
             analyserNode.fftSize = 128;
 
+            delayNode = audioCtx.createDelay(2.0); // Up to 2 seconds speaker distance compensation delay
+
             bassFilter = audioCtx.createBiquadFilter(); bassFilter.type = 'lowshelf'; bassFilter.frequency.value = 200;
             midFilter = audioCtx.createBiquadFilter(); midFilter.type = 'peaking'; midFilter.frequency.value = 1000;
             trebleFilter = audioCtx.createBiquadFilter(); trebleFilter.type = 'highshelf'; trebleFilter.frequency.value = 3000;
 
-            if (audioCtx.createStereoPanner) stereoPanner = audioCtx.createStereoPanner();
-
             bassFilter.connect(midFilter);
             midFilter.connect(trebleFilter);
-            trebleFilter.connect(analyserNode);
-
-            let lastNode = analyserNode;
-            if (stereoPanner) { analyserNode.connect(stereoPanner); lastNode = stereoPanner; }
-            lastNode.connect(gainNode);
+            trebleFilter.connect(delayNode);
+            delayNode.connect(analyserNode);
+            analyserNode.connect(gainNode);
             gainNode.connect(audioCtx.destination);
 
             isAudioInit = true;
@@ -279,7 +278,7 @@
             socket.emit('device-spectrum-stream', compressed);
         }
 
-        // Authentication & Role Setup
+        // Auth Logic
         function joinAs(role) {
             currentRoomId = document.getElementById('room-id-input').value || 'MainStudio';
             const password = role === 'admin' ? document.getElementById('admin-passcode').value : document.getElementById('listener-passcode').value;
@@ -303,75 +302,13 @@
             if (data.role === 'admin') {
                 document.getElementById('upload-section').style.display = 'block';
                 document.getElementById('playlist-modes-row').style.display = 'flex';
+                document.getElementById('dsp-preset-card').style.display = 'block';
                 document.getElementById('admin-media-card').style.display = 'block';
                 document.getElementById('admin-devices-card').style.display = 'block';
-                document.getElementById('spatial-map-card').style.display = 'block';
-                initSpatialCanvas();
             }
         });
 
-        // 2D Spatial Map Engine
-        function initSpatialCanvas() {
-            const canvas = document.getElementById('spatial-canvas');
-            const ctx = canvas.getContext('2d');
-            let draggedNode = null;
-
-            function drawMap() {
-                ctx.clearRect(0, 0, canvas.width, canvas.height);
-                const cX = canvas.width / 2, cY = canvas.height / 2;
-
-                ctx.fillStyle = "#8957e5"; ctx.beginPath(); ctx.arc(cX, cY, 10, 0, 2 * Math.PI); ctx.fill();
-
-                connectedDevices.forEach(dev => {
-                    const nx = cX + (dev.posX || 0) * (canvas.width / 2.5);
-                    const ny = cY + (dev.posY || 0) * (canvas.height / 2.5);
-
-                    ctx.fillStyle = dev.id === socket.id ? "#238636" : "#58a6ff";
-                    ctx.beginPath(); ctx.arc(nx, ny, 8, 0, 2 * Math.PI); ctx.fill();
-                    ctx.fillStyle = "#c9d1d9"; ctx.font = "10px sans-serif";
-                    ctx.fillText(dev.id.substring(0, 4), nx - 10, ny - 12);
-                });
-            }
-
-            canvas.addEventListener('mousedown', (e) => {
-                const rect = canvas.getBoundingClientRect();
-                const mx = e.clientX - rect.left, my = e.clientY - rect.top;
-                const cX = canvas.width / 2, cY = canvas.height / 2;
-
-                connectedDevices.forEach(dev => {
-                    const nx = cX + (dev.posX || 0) * (canvas.width / 2.5);
-                    const ny = cY + (dev.posY || 0) * (canvas.height / 2.5);
-                    if (Math.hypot(mx - nx, my - ny) < 12) draggedNode = dev;
-                });
-            });
-
-            canvas.addEventListener('mousemove', (e) => {
-                if (!draggedNode) return;
-                const rect = canvas.getBoundingClientRect();
-                const cX = canvas.width / 2, cY = canvas.height / 2;
-                const normX = (e.clientX - rect.left - cX) / (canvas.width / 2.5);
-                const normY = (e.clientY - rect.top - cY) / (canvas.height / 2.5);
-
-                draggedNode.posX = Math.max(-1, Math.min(1, normX));
-                draggedNode.posY = Math.max(-1, Math.min(1, normY));
-
-                socket.emit('admin-update-node-position', {
-                    targetDeviceId: draggedNode.id,
-                    x: draggedNode.posX,
-                    y: draggedNode.posY
-                });
-                drawMap();
-            });
-
-            window.addEventListener('mouseup', () => draggedNode = null);
-            setInterval(drawMap, 200);
-        }
-
-        socket.on('apply-spatial-position', (pos) => {
-            if (stereoPanner) stereoPanner.pan.value = Math.max(-1, Math.min(1, pos.x));
-        });
-
-        // Network Audio Upload Logic
+        // Interactive Playlist Operations
         async function uploadFilesToServer(e) {
             const files = Array.from(e.target.files);
             const filePayloads = [];
@@ -392,4 +329,229 @@
                 currentAudioBuffer = await audioCtx.decodeAudioData(data.buffer);
                 document.getElementById('latency-display').innerText = "Status: Audio Loaded Ready";
             } catch (err) {
-                console.error("Audio Decode Error
+                console.error("Audio Decode Error:", err);
+            }
+        });
+
+        socket.on('playlist-update', (data) => {
+            activePlaylist = data.playlist; 
+            activeTrackIndex = data.currentIndex;
+            
+            const btnRepeat = document.getElementById('btn-repeat');
+            const btnShuffle = document.getElementById('btn-shuffle');
+            if (btnRepeat) btnRepeat.classList.toggle('active', !!data.isRepeat);
+            if (btnShuffle) btnShuffle.classList.toggle('active', !!data.isShuffle);
+
+            const container = document.getElementById('playlist-container');
+            if (activePlaylist.length === 0) {
+                container.innerHTML = `<p class="info-text" style="padding:10px;">No tracks loaded in studio playlist.</p>`;
+                return;
+            }
+
+            container.innerHTML = activePlaylist.map((t, i) => `
+                <div class="playlist-item ${i === activeTrackIndex ? 'active' : ''}">
+                    <span onclick="selectTrack(${i})">${i + 1}. ${t.name}</span>
+                    <div class="playlist-controls">
+                        ${currentRole === 'admin' ? `
+                            <button class="btn-opt" style="padding:2px 6px;" onclick="moveTrack(${i}, -1)">▲</button>
+                            <button class="btn-opt" style="padding:2px 6px;" onclick="moveTrack(${i}, 1)">▼</button>
+                            <button class="btn-danger" onclick="removeTrack(${i})">✖</button>
+                        ` : ''}
+                    </div>
+                </div>
+            `).join('');
+        });
+
+        function selectTrack(idx) {
+            if (currentRole !== 'admin') return;
+            socket.emit('admin-select-track', idx);
+        }
+
+        function removeTrack(idx) {
+            if (currentRole !== 'admin') return;
+            socket.emit('admin-remove-track', idx);
+        }
+
+        function moveTrack(idx, direction) {
+            if (currentRole !== 'admin') return;
+            const targetIdx = idx + direction;
+            if (targetIdx < 0 || targetIdx >= activePlaylist.length) return;
+            socket.emit('admin-reorder-playlist', { fromIndex: idx, toIndex: targetIdx });
+        }
+
+        function toggleRepeat() {
+            if (currentRole !== 'admin') return;
+            socket.emit('admin-toggle-repeat');
+        }
+
+        function toggleShuffle() {
+            if (currentRole !== 'admin') return;
+            socket.emit('admin-toggle-shuffle');
+        }
+
+        function applyDspPreset(presetName) {
+            if (currentRole !== 'admin') return;
+            socket.emit('admin-apply-dsp-preset', presetName);
+        }
+
+        socket.on('apply-room-dsp-preset', (eq) => {
+            if (!isAudioInit) initAudioContext();
+            bassFilter.gain.value = eq.bass;
+            midFilter.gain.value = eq.mid;
+            trebleFilter.gain.value = eq.treble;
+        });
+
+        // Device Controls
+        socket.on('device-list-update', (devices) => {
+            connectedDevices = devices;
+            if (currentRole !== 'admin') return;
+            const container = document.getElementById('connected-devices-container');
+            container.innerHTML = devices.map(dev => `
+                <div class="device-card">
+                    <div class="device-header">
+                        <span class="device-id">${dev.id.substring(0,6)} (${dev.zone || 'Main'})</span>
+                        <span class="info-text">${dev.latency}ms latency</span>
+                    </div>
+                    <div style="margin-top:4px;">
+                        <label>Distance Delay Compensation (${dev.delayMs || 0}ms)</label>
+                        <input type="range" min="0" max="500" value="${dev.delayMs || 0}" step="10" onchange="updateDeviceDelay('${dev.id}', this.value)">
+                    </div>
+                    <div class="eq-grid">
+                        <div><label>Bass</label><input type="range" min="-12" max="12" value="${dev.eq.bass}" onchange="updateDeviceEQ('${dev.id}', 'bass', this.value)"></div>
+                        <div><label>Mid</label><input type="range" min="-12" max="12" value="${dev.eq.mid}" onchange="updateDeviceEQ('${dev.id}', 'mid', this.value)"></div>
+                        <div><label>Treble</label><input type="range" min="-12" max="12" value="${dev.eq.treble}" onchange="updateDeviceEQ('${dev.id}', 'treble', this.value)"></div>
+                    </div>
+                </div>
+            `).join('');
+        });
+
+        function updateDeviceEQ(targetId, band, val) {
+            const eqObj = {}; eqObj[band] = parseFloat(val);
+            socket.emit('admin-target-device-dsp', { targetDeviceId: targetId, eq: eqObj });
+        }
+
+        function updateDeviceDelay(targetId, delayMs) {
+            socket.emit('admin-target-device-dsp', { targetDeviceId: targetId, delayMs: parseFloat(delayMs) });
+        }
+
+        socket.on('apply-custom-dsp', (dsp) => {
+            if (!isAudioInit) initAudioContext();
+            if (dsp.isMuted) gainNode.gain.value = 0;
+            else if (dsp.volume !== undefined) gainNode.gain.value = dsp.volume;
+            if (dsp.delayMs !== undefined && delayNode) {
+                delayNode.delayTime.value = dsp.delayMs / 1000;
+            }
+            if (dsp.eq) {
+                if (dsp.eq.bass !== undefined) bassFilter.gain.value = dsp.eq.bass;
+                if (dsp.eq.mid !== undefined) midFilter.gain.value = dsp.eq.mid;
+                if (dsp.eq.treble !== undefined) trebleFilter.gain.value = dsp.eq.treble;
+            }
+        });
+
+        // Time Synchronization
+        setInterval(() => {
+            socket.emit('time-sync-ping', Date.now());
+        }, 3000);
+
+        socket.on('time-sync-pong', (data) => {
+            const now = Date.now();
+            const rtt = now - data.clientTime;
+            serverOffset = (data.serverTime + (rtt / 2)) - now;
+            socket.emit('report-latency', rtt / 2);
+        });
+
+        function sendAdminAction(action) {
+            if (currentRole !== 'admin') return;
+            socket.emit('admin-audio-action', {
+                action: action,
+                timestamp: Date.now() + serverOffset,
+                seekPosition: pauseOffsetAcc
+            });
+        }
+
+        function seekTrack(value) {
+            if (currentRole !== 'admin' || !currentAudioBuffer) return;
+            const targetPos = (value / 100) * currentAudioBuffer.duration;
+            pauseOffsetAcc = targetPos;
+            sendAdminAction('play');
+        }
+
+        function playBufferAt(offset, xfadeTime = 0) {
+            if (!currentAudioBuffer) return;
+            
+            if (bufferSource && gainNode) {
+                try {
+                    const fadeOutTime = Math.min(xfadeTime, 1.5);
+                    gainNode.gain.setValueAtTime(gainNode.gain.value, audioCtx.currentTime);
+                    gainNode.gain.linearRampToValueAtTime(0.001, audioCtx.currentTime + fadeOutTime);
+                    setTimeout(() => { try { bufferSource.stop(); } catch(e){} }, fadeOutTime * 1000);
+                } catch(e) {}
+            }
+
+            bufferSource = audioCtx.createBufferSource();
+            bufferSource.buffer = currentAudioBuffer;
+            bufferSource.playbackRate.value = masterPlaybackRate;
+            bufferSource.connect(bassFilter);
+            
+            const startPos = Math.max(0, offset % currentAudioBuffer.duration);
+
+            bufferSource.onended = () => {
+                if (isPlayingState && currentRole === 'admin') {
+                    socket.emit('admin-trigger-auto-advance');
+                }
+            };
+
+            bufferSource.start(0, startPos);
+            
+            if (gainNode) {
+                gainNode.gain.setValueAtTime(0.001, audioCtx.currentTime);
+                gainNode.gain.linearRampToValueAtTime(1.0, audioCtx.currentTime + Math.min(xfadeTime, 1.5));
+            }
+
+            startTimeAcc = audioCtx.currentTime - (startPos / masterPlaybackRate);
+            isPlayingState = true;
+        }
+
+        function stopBuffer() {
+            if (bufferSource) {
+                try { bufferSource.stop(); } catch(e) {}
+            }
+            isPlayingState = false;
+        }
+
+        socket.on('audio-sync-receive', async (data) => {
+            if (!isAudioInit) initAudioContext();
+            if (audioCtx && audioCtx.state === 'suspended') await audioCtx.resume();
+
+            if (data.action === 'play') {
+                const now = Date.now() + serverOffset;
+                const elapsedSinceStart = ((now - data.startTimestamp) / 1000) * masterPlaybackRate;
+                const targetSeek = Math.max(0, (data.seekPosition || 0) + elapsedSinceStart);
+
+                playBufferAt(targetSeek, data.crossfade || 0);
+            } else if (data.action === 'pause') {
+                stopBuffer();
+            }
+        });
+
+        // Playhead Timeline Loop
+        setInterval(() => {
+            if (isPlayingState && audioCtx && currentAudioBuffer) {
+                const currentPos = (audioCtx.currentTime - startTimeAcc) * masterPlaybackRate;
+                pauseOffsetAcc = currentPos;
+                const dur = currentAudioBuffer.duration;
+                
+                document.getElementById('curr-time-display').innerText = formatTime(currentPos);
+                document.getElementById('total-time-display').innerText = formatTime(dur);
+                document.getElementById('seek-slider').value = (currentPos / dur) * 100;
+            }
+        }, 250);
+
+        function formatTime(secs) {
+            const m = Math.floor(secs / 60) || 0;
+            const s = Math.floor(secs % 60) || 0;
+            return `${m < 10 ? '0' : ''}${m}:${s < 10 ? '0' : ''}${s}`;
+        }
+    </script>
+</body>
+</html>
