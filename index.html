@@ -1,557 +1,488 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sync Speaker Studio - Ultra Engine</title>
-    <script src="/socket.io/socket.io.js"></script>
-    <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0b0e14; color: #c9d1d9; text-align: center; padding: 15px; }
-        h1 { margin: 8px 0; color: #58a6ff; font-size: 22px; }
-        .card { background: rgba(22, 27, 34, 0.95); border: 1px solid #30363d; border-radius: 10px; padding: 14px; margin: 10px auto; max-width: 560px; text-align: left; }
-        .center { text-align: center; }
-        .status-val { font-weight: bold; color: #f2cc60; }
-        .error-msg { color: #f85149; font-weight: bold; font-size: 13px; margin-top: 6px; display: none; }
-        button { padding: 9px 12px; margin: 3px 0; font-size: 12px; font-weight: bold; border: none; border-radius: 6px; cursor: pointer; width: 100%; transition: opacity 0.2s; }
-        button:active { opacity: 0.8; }
-        .btn-admin { background: #238636; color: white; }
-        .btn-listener { background: #1f6feb; color: white; }
-        .btn-play { background: #238636; color: white; margin-top: 6px; }
-        .btn-pause { background: #da3633; color: white; }
-        .btn-mic { background: #8957e5; color: white; font-size: 13px; }
-        .btn-opt { background: #21262d; color: #c9d1d9; border: 1px solid #30363d; width: auto; flex: 1; }
-        .btn-opt.active { background: #1f6feb; color: white; border-color: #58a6ff; }
-        .btn-danger { background: #da363322; color: #f85149; border: 1px solid #da3633; width: auto; padding: 3px 8px; font-size: 10px; }
-        
-        label { display: block; font-size: 11px; color: #8b949e; margin-bottom: 3px; font-weight: 600; text-transform: uppercase; }
-        input[type="range"] { width: 100%; margin: 3px 0; accent-color: #58a6ff; }
-        input[type="text"], input[type="password"], select, input[type="file"] { width: 100%; padding: 8px; border-radius: 6px; border: 1px solid #30363d; background: #0d1117; color: #c9d1d9; margin-bottom: 8px; font-size: 13px; }
-        .info-text { font-size: 12px; color: #8b949e; }
-        
-        .device-card { background: #0d1117; border: 1px solid #30363d; border-radius: 8px; padding: 10px; margin-bottom: 10px; font-size: 12px; }
-        .device-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
-        .device-id { font-weight: bold; color: #58a6ff; }
-        .eq-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; margin-top: 6px; }
-        
-        .timeline-container { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
-        .timeline-time { font-size: 11px; font-family: monospace; color: #8b949e; }
-        
-        .playlist-container { background: #0d1117; border: 1px solid #30363d; border-radius: 6px; max-height: 180px; overflow-y: auto; margin-top: 8px; }
-        .playlist-item { display: flex; justify-content: space-between; align-items: center; padding: 8px 10px; border-bottom: 1px solid #21262d; font-size: 12px; cursor: pointer; }
-        .playlist-item.active { background: #1f6feb22; border-left: 3px solid #58a6ff; font-weight: bold; color: #58a6ff; }
-        .playlist-controls { display: flex; gap: 4px; align-items: center; }
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sync Speaker Studio — Ahuja FMX-212PRO Console</title>
+  <style>
+    :root {
+      --bg: #0b0f19;
+      --card: #151d30;
+      --accent: #38bdf8;
+      --green: #4ade80;
+      --pink: #f472b6;
+      --orange: #fb923c;
+      --text: #f8fafc;
+      --muted: #64748b;
+    }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      margin: 0;
+      padding: 1.5rem;
+    }
+    .container { max-width: 1200px; margin: 0 auto; }
+    h1 { margin-bottom: 0.2rem; font-size: 1.8rem; }
+    .subtitle { color: var(--muted); margin-bottom: 1.5rem; font-size: 0.95rem; }
+    
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1rem; margin-bottom: 1.5rem; }
+    .card { background: var(--card); padding: 1.25rem; border-radius: 10px; border: 1px solid #1e293b; }
+    
+    .metric-group { display: flex; gap: 1.5rem; background: var(--card); padding: 1rem; border-radius: 8px; margin-bottom: 1.5rem; }
+    .metric span { display: block; font-size: 0.75rem; color: var(--muted); text-transform: uppercase; }
+    .metric strong { font-size: 1.1rem; color: var(--accent); }
 
-        .unlock-overlay { background: #238636; color: white; padding: 12px; border-radius: 6px; margin-bottom: 10px; font-weight: bold; text-align: center; cursor: pointer; }
-        .controls-row { display: flex; gap: 6px; margin-top: 6px; }
-        .preset-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; margin-top: 6px; }
-    </style>
+    .btn {
+      background: var(--accent); color: #000; border: none; padding: 0.65rem 1rem;
+      font-weight: 600; border-radius: 6px; cursor: pointer; transition: 0.2s opacity; margin-right: 0.5rem; margin-bottom: 0.5rem;
+    }
+    .btn-pink { background: var(--pink); color: #fff; }
+    .btn-green { background: var(--green); color: #000; }
+    .btn-orange { background: var(--orange); color: #000; }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    select, input[type="range"], input[type="file"] { width: 100%; padding: 0.5rem; background: #0f172a; color: var(--text); border: 1px solid #334155; border-radius: 6px; margin-top: 0.3rem; box-sizing: border-box; }
+    
+    table { width: 100%; border-collapse: collapse; margin-top: 0.5rem; }
+    th, td { text-align: left; padding: 0.65rem; border-bottom: 1px solid #1e293b; font-size: 0.9rem; }
+    th { color: var(--muted); font-size: 0.75rem; text-transform: uppercase; }
+
+    canvas { width: 100%; height: 80px; background: #090d16; border-radius: 6px; margin-top: 0.75rem; }
+    
+    /* Mixer Channels Layout */
+    .mixer-channels { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 0.75rem; margin-top: 1rem; }
+    .channel-strip { background: #0d1424; padding: 0.75rem; border-radius: 6px; border: 1px solid #1e293b; font-size: 0.8rem; }
+    .channel-strip h4 { margin: 0 0 0.5rem 0; color: var(--accent); font-size: 0.85rem; border-bottom: 1px solid #1e293b; padding-bottom: 0.25rem; }
+    .control-label { font-size: 0.7rem; color: var(--muted); margin-top: 0.4rem; display: block; }
+  </style>
 </head>
 <body>
+  <div class="container">
+    <h1>Sync Speaker Studio — Ahuja FMX-212PRO Console</h1>
+    <div class="subtitle">Multi-Room Audio Engine with Integrated 12-Ch Mix Console, DSP FX, Graphic EQ & NTP Alignment</div>
 
-    <h1>Sync Speaker Studio Ultra</h1>
-
-    <div class="card center">
-        <p>Room: <span id="room-display" class="status-val">MainStudio</span> | Role: <span id="role-display" class="status-val">Unassigned</span></p>
-        <p id="latency-display" class="info-text" style="margin-top: 4px;">Status: Standby | Latency: 0 ms</p>
+    <div class="metric-group">
+      <div class="metric"><span>Node ID</span><strong id="my-id">Connecting...</strong></div>
+      <div class="metric"><span>NTP Clock Offset</span><strong id="clock-offset">0.00 ms</strong></div>
+      <div class="metric"><span>Round Trip Time</span><strong id="rtt">0.00 ms</strong></div>
     </div>
 
-    <!-- Autoplay Audio Engine Unlock -->
-    <div id="unlock-card" class="card" style="display:none;">
-        <div class="unlock-overlay" onclick="enableAudioEngine()">
-            🔊 Click to Connect Audio Engine on Speaker Node
+    <!-- 1. System Controls & Media Player -->
+    <div class="grid">
+      <div class="card">
+        <h3>1. System Engine & DJ Paging</h3>
+        <button class="btn" id="btn-init">Activate Audio Engine</button>
+        <button class="btn btn-pink" id="btn-dj" disabled>Hold for Live DJ Paging</button>
+        <button class="btn btn-green" id="btn-chirp" disabled>Emit Ultrasonic Chirp</button>
+      </div>
+
+      <div class="card">
+        <h3>2. Ahuja Media Player & Bluetooth AUX</h3>
+        <label>Load MP3 Track (USB / Local Media)</label>
+        <input type="file" id="media-file" accept="audio/*" disabled>
+        <div style="margin-top:0.75rem;">
+          <button class="btn btn-green" id="btn-play" disabled>Play</button>
+          <button class="btn btn-orange" id="btn-pause" disabled>Pause</button>
         </div>
+      </div>
     </div>
 
-    <!-- Auth Frame -->
-    <div id="role-selection" class="card">
-        <label>Room Name:</label>
-        <input type="text" id="room-id-input" value="MainStudio">
-        <label>Admin Passcode:</label>
-        <input type="password" id="admin-passcode" placeholder="Default: 1234">
-        <button class="btn-admin" onclick="joinAs('admin')">Join as Studio Controller</button>
-        <hr style="border-color:#30363d; margin:10px 0;">
-        <label>Listener Passcode:</label>
-        <input type="password" id="listener-passcode" placeholder="Default: listenpass">
-        <button class="btn-listener" onclick="joinAs('listener')">Join as Speaker Node</button>
-        <p id="auth-error-msg" class="error-msg center"></p>
+    <!-- 2. Ahuja 212PRO Master DSP & FX Processor -->
+    <div class="grid">
+      <div class="card">
+        <h3>3. 24-Bit Digital Multi-FX Engine</h3>
+        <label>FX Preset</label>
+        <select id="fx-preset" disabled>
+          <option value="Off">Bypass (Off)</option>
+          <option value="HallReverb">Vocal Hall Reverb</option>
+          <option value="StageDelay">Stage Echo Delay</option>
+        </select>
+
+        <label class="control-label">FX Return Level (Wet Mix)</label>
+        <input type="range" id="fx-level" min="0" max="1" step="0.05" value="0.3" disabled>
+
+        <label class="control-label">Manual Distance Delay Compensation (ms)</label>
+        <input type="range" id="delay-slider" min="0" max="2000" value="0" disabled>
+        <span id="delay-val" style="font-size: 0.8rem; color: var(--muted);">0 ms</span>
+      </div>
+
+      <div class="card">
+        <h3>4. Master Graphic Equalizer</h3>
+        <label class="control-label">Low (80 Hz)</label>
+        <input type="range" id="geq-low" min="-12" max="12" value="0" step="1" disabled>
+        <label class="control-label">Mid (2.5 kHz)</label>
+        <input type="range" id="geq-mid" min="-12" max="12" value="0" step="1" disabled>
+        <label class="control-label">High (12 kHz)</label>
+        <input type="range" id="geq-high" min="-12" max="12" value="0" step="1" disabled>
+      </div>
     </div>
 
-    <!-- Global Interactive Playlist Card (Visible to All) -->
-    <div id="playlist-card" class="card" style="display: none;">
-        <h3 style="color: #58a6ff; margin-bottom: 8px; font-size: 15px;">🎶 Interactive Playlist Engine</h3>
-        
-        <div id="upload-section" style="display: none;">
-            <label>Upload Audio Tracks (Admin Upload):</label>
-            <input type="file" id="audio-file-input" accept="audio/*" multiple onchange="uploadFilesToServer(event)">
+    <!-- 3. 12-Channel Input Mixer Panel -->
+    <div class="card" style="margin-bottom: 1.5rem;">
+      <h3>5. 12-Channel Input Mixer Strip</h3>
+      <div class="mixer-channels" id="mixer-strips">
+        <!-- Rendered via Javascript -->
+      </div>
+    </div>
+
+    <!-- 4. Real-Time Visualizer -->
+    <div class="card" style="margin-bottom: 1.5rem;">
+      <h3>6. Master Output Spectrum Visualizer</h3>
+      <canvas id="visualizer"></canvas>
+    </div>
+
+    <!-- 5. Node Matrix Table -->
+    <div class="card">
+      <h3>7. Studio Speaker Node Matrix</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Node ID</th>
+            <th>Calculated Acoustic Delay</th>
+            <th>EQ Profile</th>
+            <th>Mesh Status</th>
+          </tr>
+        </thead>
+        <tbody id="nodes-table"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io();
+
+    // Core Audio Graph
+    let audioCtx, masterGain, delayNode, analyser, micStream, djMediaRecorder;
+    let masterGeqLow, masterGeqMid, masterGeqHigh;
+    let fxConvolver, fxDelayNode, fxGain;
+    let audioElement, audioSourceNode;
+    let isAudioInit = false;
+
+    // Channel Strips (12 Channels)
+    const channelNodes = [];
+
+    // Timing Sync
+    let clockOffset = 0, rtt = 0;
+    const peerConnections = {};
+    const rtcConfig = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+
+    // DOM Elements
+    const myIdEl = document.getElementById('my-id');
+    const offsetEl = document.getElementById('clock-offset');
+    const rttEl = document.getElementById('rtt');
+    const btnInit = document.getElementById('btn-init');
+    const btnDj = document.getElementById('btn-dj');
+    const btnChirp = document.getElementById('btn-chirp');
+    const mediaFileInput = document.getElementById('media-file');
+    const btnPlay = document.getElementById('btn-play');
+    const btnPause = document.getElementById('btn-pause');
+    const fxPresetSelect = document.getElementById('fx-preset');
+    const fxLevelSlider = document.getElementById('fx-level');
+    const delaySlider = document.getElementById('delay-slider');
+    const delayVal = document.getElementById('delay-val');
+    const geqLowSlider = document.getElementById('geq-low');
+    const geqMidSlider = document.getElementById('geq-mid');
+    const geqHighSlider = document.getElementById('geq-high');
+    const nodesTable = document.getElementById('nodes-table');
+    const canvas = document.getElementById('visualizer');
+    const canvasCtx = canvas.getContext('2d');
+
+    // Dynamically Render 12 Mixer Channel UI Strips
+    const stripsContainer = document.getElementById('mixer-strips');
+    for (let i = 1; i <= 12; i++) {
+      const isStereo = i >= 11;
+      stripsContainer.innerHTML += `
+        <div class="channel-strip">
+          <h4>${isStereo ? 'Ch ' + i + ' (ST)' : 'Ch ' + i}</h4>
+          <label class="control-label">GAIN</label>
+          <input type="range" id="ch-gain-${i}" min="0" max="2" step="0.05" value="1" disabled>
+          <label class="control-label">HIGH (12k)</label>
+          <input type="range" id="ch-high-${i}" min="-12" max="12" step="1" value="0" disabled>
+          <label class="control-label">MID (2.5k)</label>
+          <input type="range" id="ch-mid-${i}" min="-12" max="12" step="1" value="0" disabled>
+          <label class="control-label">LOW (80Hz)</label>
+          <input type="range" id="ch-low-${i}" min="-12" max="12" step="1" value="0" disabled>
+          <label class="control-label">AUX/FX SEND</label>
+          <input type="range" id="ch-fx-${i}" min="0" max="1" step="0.05" value="0" disabled>
         </div>
-        
-        <div class="controls-row" id="playlist-modes-row" style="display:none;">
-            <button id="btn-repeat" class="btn-opt" onclick="toggleRepeat()">🔁 Repeat</button>
-            <button id="btn-shuffle" class="btn-opt" onclick="toggleShuffle()">🔀 Shuffle</button>
-        </div>
+      `;
+    }
 
-        <div id="playlist-container" class="playlist-container"></div>
-    </div>
+    // 1. NTP Time Synchronization Protocol
+    function syncClock() { socket.emit('ping_sync', { t0: Date.now() }); }
+    socket.on('pong_sync', (data) => {
+      const t3 = Date.now();
+      rtt = (t3 - data.t0) - (data.t2 - data.t1);
+      clockOffset = ((data.t1 - data.t0) + (data.t2 - t3)) / 2;
+      offsetEl.innerText = clockOffset.toFixed(2) + ' ms';
+      rttEl.innerText = rtt.toFixed(2) + ' ms';
+    });
+    setInterval(syncClock, 2500);
+    function getSyncedTime() { return Date.now() + clockOffset; }
 
-    <!-- Master DSP & Equalizer Presets (Admin Only) -->
-    <div id="dsp-preset-card" class="card" style="display: none;">
-        <h3 style="color: #58a6ff; margin-bottom: 6px; font-size: 15px;">🎛️ Master Room Equalizer Presets</h3>
-        <p class="info-text">Apply instant EQ curves across all active nodes in real time.</p>
-        <div class="preset-grid">
-            <button class="btn-opt" onclick="applyDspPreset('flat')">Flat</button>
-            <button class="btn-opt" onclick="applyDspPreset('bass-boost')">Bass</button>
-            <button class="btn-opt" onclick="applyDspPreset('club')">Club</button>
-            <button class="btn-opt" onclick="applyDspPreset('vocal')">Vocal</button>
-            <button class="btn-opt" onclick="applyDspPreset('acoustic')">Acoustic</button>
-        </div>
-    </div>
+    // 2. Initialize Master Audio Engine & Ahuja DSP Pipeline
+    function initEngine() {
+      if (isAudioInit) return;
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      audioCtx = new AudioCtx();
 
-    <!-- Master Playback Controller (Admin Only) -->
-    <div id="admin-media-card" class="card" style="display: none;">
-        <h3 style="color: #58a6ff; margin-bottom: 8px; font-size: 15px;">🎼 Master Media Console & Live DJ Page</h3>
-        
-        <button id="mic-btn" class="btn-mic" onmousedown="startMicPaging()" onmouseup="stopMicPaging()" onmouseleave="stopMicPaging()">🎙️ Hold to Speak (Live DJ Page)</button>
+      // Master Output Nodes
+      delayNode = audioCtx.createDelay(5.0);
+      masterGain = audioCtx.createGain();
+      analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 64;
 
-        <div class="timeline-container">
-            <span id="curr-time-display" class="timeline-time">00:00</span>
-            <input type="range" id="seek-slider" min="0" max="100" value="0" step="0.1" onchange="seekTrack(this.value)">
-            <span id="total-time-display" class="timeline-time">00:00</span>
-        </div>
+      // Master Graphic Equalizer (3 Band Active)
+      masterGeqLow = audioCtx.createBiquadFilter();
+      masterGeqLow.type = 'lowshelf';
+      masterGeqLow.frequency.value = 80;
 
-        <div class="controls-row">
-            <button class="btn-play" onclick="sendAdminAction('play')">PLAY</button>
-            <button class="btn-pause" onclick="sendAdminAction('pause')">PAUSE</button>
-        </div>
-    </div>
+      masterGeqMid = audioCtx.createBiquadFilter();
+      masterGeqMid.type = 'peaking';
+      masterGeqMid.frequency.value = 2500;
 
-    <!-- Connected Devices & Delay Tuning (Admin Only) -->
-    <div id="admin-devices-card" class="card" style="display: none;">
-        <h3 style="color: #58a6ff; margin-bottom: 8px; font-size: 15px;">📱 Active Studio Speaker Nodes</h3>
-        <div id="connected-devices-container"></div>
-    </div>
+      masterGeqHigh = audioCtx.createBiquadFilter();
+      masterGeqHigh.type = 'highshelf';
+      masterGeqHigh.frequency.value = 12000;
 
-    <!-- Visualizer Frame -->
-    <div class="card center">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-            <label style="margin: 0;">Audio Visualizer Mode</label>
-            <select id="vis-mode-select" style="width: auto; margin:0;" onchange="visMode = this.value">
-                <option value="bars">Frequency Bars</option>
-                <option value="radial">Radial Pulse</option>
-                <option value="waveform">Oscilloscope Wave</option>
-            </select>
-        </div>
-        <canvas id="local-spectrum-canvas" width="300" height="80" style="background:#0d1117; border-radius:6px; width:100%;"></canvas>
-    </div>
+      // Master Digital Multi-FX Bus
+      fxGain = audioCtx.createGain();
+      fxGain.gain.value = 0.3;
+      fxDelayNode = audioCtx.createDelay();
+      fxDelayNode.delayTime.value = 0.35; // 350ms echo
 
-    <script>
-        const socket = io();
-        let currentRole = 'unassigned';
-        let currentRoomId = 'MainStudio';
-        let serverOffset = 0;
-
-        // Web Audio API Global Engine State
-        let audioCtx, bufferSource, currentAudioBuffer, gainNode, bassFilter, midFilter, trebleFilter, delayNode, analyserNode;
-        let isAudioInit = false;
-        let isPlayingState = false;
-        let startTimeAcc = 0;
-        let pauseOffsetAcc = 0;
-        let masterPlaybackRate = 1.0;
-        let crossfadeSecs = 3;
-
-        let activePlaylist = [];
-        let activeTrackIndex = -1;
-        let connectedDevices = [];
-        let visMode = 'bars';
-        let micMediaRecorder, micStream;
-
-        function enableAudioEngine() {
-            if (!isAudioInit) initAudioContext();
-            if (audioCtx && audioCtx.state === 'suspended') {
-                audioCtx.resume();
-            }
-            document.getElementById('unlock-card').style.display = 'none';
+      // Synthetic Reverb Impulse Generation
+      fxConvolver = audioCtx.createConvolver();
+      const rate = audioCtx.sampleRate;
+      const length = rate * 2.0;
+      const impulse = audioCtx.createBuffer(2, length, rate);
+      for (let c = 0; c < 2; c++) {
+        const channelData = impulse.getChannelData(c);
+        for (let i = 0; i < length; i++) {
+          channelData[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / length, 2);
         }
+      }
+      fxConvolver.buffer = impulse;
 
-        function initAudioContext() {
-            if (isAudioInit) return;
-            const AudioContext = window.AudioContext || window.webkitAudioContext;
-            audioCtx = new AudioContext();
+      // Connect 12 Channel DSP Architecture
+      for (let i = 1; i <= 12; i++) {
+        const gainNode = audioCtx.createGain();
+        const highEq = audioCtx.createBiquadFilter(); highEq.type = 'highshelf'; highEq.frequency.value = 12000;
+        const midEq = audioCtx.createBiquadFilter(); midEq.type = 'peaking'; midEq.frequency.value = 2500;
+        const lowEq = audioCtx.createBiquadFilter(); lowEq.type = 'lowshelf'; lowEq.frequency.value = 80;
+        const fxSendGain = audioCtx.createGain(); fxSendGain.gain.value = 0;
 
-            gainNode = audioCtx.createGain();
-            analyserNode = audioCtx.createAnalyser();
-            analyserNode.fftSize = 128;
+        gainNode.connect(highEq);
+        highEq.connect(midEq);
+        midEq.connect(lowEq);
+        lowEq.connect(masterGeqLow);
+        lowEq.connect(fxSendGain);
+        fxSendGain.connect(fxGain);
 
-            delayNode = audioCtx.createDelay(2.0); // Up to 2 seconds speaker distance compensation delay
+        channelNodes[i] = { gainNode, highEq, midEq, lowEq, fxSendGain };
 
-            bassFilter = audioCtx.createBiquadFilter(); bassFilter.type = 'lowshelf'; bassFilter.frequency.value = 200;
-            midFilter = audioCtx.createBiquadFilter(); midFilter.type = 'peaking'; midFilter.frequency.value = 1000;
-            trebleFilter = audioCtx.createBiquadFilter(); trebleFilter.type = 'highshelf'; trebleFilter.frequency.value = 3000;
+        // Attach Strip Event Listeners
+        document.getElementById(`ch-gain-${i}`).addEventListener('input', e => gainNode.gain.value = parseFloat(e.target.value));
+        document.getElementById(`ch-high-${i}`).addEventListener('input', e => highEq.gain.value = parseFloat(e.target.value));
+        document.getElementById(`ch-mid-${i}`).addEventListener('input', e => midEq.gain.value = parseFloat(e.target.value));
+        document.getElementById(`ch-low-${i}`).addEventListener('input', e => lowEq.gain.value = parseFloat(e.target.value));
+        document.getElementById(`ch-fx-${i}`).addEventListener('input', e => fxSendGain.gain.value = parseFloat(e.target.value));
+        document.querySelectorAll(`#ch-gain-${i}, #ch-high-${i}, #ch-mid-${i}, #ch-low-${i}, #ch-fx-${i}`).forEach(el => el.disabled = false);
+      }
 
-            bassFilter.connect(midFilter);
-            midFilter.connect(trebleFilter);
-            trebleFilter.connect(delayNode);
-            delayNode.connect(analyserNode);
-            analyserNode.connect(gainNode);
-            gainNode.connect(audioCtx.destination);
+      // FX Bus Routing -> Master GEQ
+      fxGain.connect(masterGeqLow);
 
-            isAudioInit = true;
-            renderVisualizerEngine();
+      // Route Master GEQ -> Delay Node -> Master Volume Gain -> Analyser -> Output
+      masterGeqLow.connect(masterGeqMid);
+      masterGeqMid.connect(masterGeqHigh);
+      masterGeqHigh.connect(delayNode);
+      delayNode.connect(masterGain);
+      masterGain.connect(analyser);
+      analyser.connect(audioCtx.destination);
+
+      isAudioInit = true;
+      btnInit.disabled = true;
+      btnInit.innerText = "Engine Active";
+      btnDj.disabled = false;
+      btnChirp.disabled = false;
+      mediaFileInput.disabled = false;
+      fxPresetSelect.disabled = false;
+      fxLevelSlider.disabled = false;
+      delaySlider.disabled = false;
+      geqLowSlider.disabled = false;
+      geqMidSlider.disabled = false;
+      geqHighSlider.disabled = false;
+
+      drawVisualizer();
+      socket.emit('request_peers');
+    }
+    btnInit.addEventListener('click', initEngine);
+
+    // 3. Media Player Logic (Connects to Ch 11/12 Stereo AUX)
+    mediaFileInput.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file || !isAudioInit) return;
+      if (audioElement) audioElement.pause();
+      
+      audioElement = new Audio(URL.createObjectURL(file));
+      audioSourceNode = audioCtx.createMediaElementSource(audioElement);
+      audioSourceNode.connect(channelNodes[11].gainNode);
+      btnPlay.disabled = false;
+      btnPause.disabled = false;
+    });
+    btnPlay.addEventListener('click', () => audioElement && audioElement.play());
+    btnPause.addEventListener('click', () => audioElement && audioElement.pause());
+
+    // 4. Master Graphic EQ & FX Routing Controls
+    geqLowSlider.addEventListener('input', e => masterGeqLow.gain.value = parseFloat(e.target.value));
+    geqMidSlider.addEventListener('input', e => masterGeqMid.gain.value = parseFloat(e.target.value));
+    geqHighSlider.addEventListener('input', e => masterGeqHigh.gain.value = parseFloat(e.target.value));
+
+    fxLevelSlider.addEventListener('input', e => fxGain.gain.value = parseFloat(e.target.value));
+    fxPresetSelect.addEventListener('change', (e) => {
+      const preset = e.target.value;
+      fxGain.disconnect();
+      if (preset === 'HallReverb') fxGain.connect(fxConvolver).connect(masterGeqLow);
+      else if (preset === 'StageDelay') fxGain.connect(fxDelayNode).connect(masterGeqLow);
+      else fxGain.connect(masterGeqLow);
+    });
+
+    delaySlider.addEventListener('input', (e) => {
+      const ms = e.target.value;
+      delayVal.innerText = ms + ' ms';
+      if (delayNode) delayNode.delayTime.setValueAtTime(ms / 1000, audioCtx.currentTime);
+      socket.emit('update_node_settings', { delayMs: parseInt(ms) });
+    });
+
+    // 5. Live DJ Mic Paging (Routed to Channel 1 Mic)
+    btnDj.addEventListener('mousedown', startDjPaging);
+    btnDj.addEventListener('mouseup', stopDjPaging);
+    async function startDjPaging() {
+      if (!isAudioInit) return;
+      socket.emit('dj_paging_state', { active: true });
+      micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const micSource = audioCtx.createMediaStreamSource(micStream);
+      micSource.connect(channelNodes[1].gainNode);
+      djMediaRecorder = new MediaRecorder(micStream);
+      djMediaRecorder.ondataavailable = (e) => socket.emit('dj_audio_chunk', e.data);
+      djMediaRecorder.start(100);
+    }
+    function stopDjPaging() {
+      if (djMediaRecorder && djMediaRecorder.state !== 'inactive') {
+        djMediaRecorder.stop();
+        micStream.getTracks().forEach(t => t.stop());
+        socket.emit('dj_paging_state', { active: false });
+      }
+    }
+    socket.on('dj_paging_state', (data) => {
+      if (masterGain) masterGain.gain.setTargetAtTime(data.active ? 0.2 : 1.0, audioCtx.currentTime, 0.1);
+    });
+
+    // 6. Ultrasonic Auto-Calibration Protocol
+    btnChirp.addEventListener('click', () => {
+      if (!isAudioInit) return;
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = 'sine'; osc.frequency.setValueAtTime(19000, audioCtx.currentTime);
+      gain.gain.setValueAtTime(0.001, audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.8, audioCtx.currentTime + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.05);
+      osc.connect(gain); gain.connect(audioCtx.destination);
+      osc.start(); osc.stop(audioCtx.currentTime + 0.05);
+      socket.emit('master_emitted_chirp', { timestamp: getSyncedTime() });
+    });
+
+    socket.on('listen_for_chirp', async () => {
+      if (!isAudioInit) return;
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const micSource = audioCtx.createMediaStreamSource(stream);
+        const micAnalyser = audioCtx.createAnalyser();
+        micAnalyser.fftSize = 2048;
+        micSource.connect(micAnalyser);
+        const dataArray = new Uint8Array(micAnalyser.frequencyBinCount);
+        const targetBin = Math.round(19000 / (audioCtx.sampleRate / micAnalyser.fftSize));
+
+        const start = Date.now();
+        function detect() {
+          micAnalyser.getByteFrequencyData(dataArray);
+          if (dataArray[targetBin] > 180) {
+            socket.emit('chirp_detected', { arrivalTime: getSyncedTime() });
+            stream.getTracks().forEach(t => t.stop());
+          } else if (Date.now() - start < 3000) {
+            requestAnimationFrame(detect);
+          } else { stream.getTracks().forEach(t => t.stop()); }
         }
+        detect();
+      } catch (err) {}
+    });
 
-        // Live DJ Mic Paging
-        async function startMicPaging() {
-            if (currentRole !== 'admin') return;
-            try {
-                micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                micMediaRecorder = new MediaRecorder(micStream);
-                socket.emit('admin-mic-state', true);
+    socket.on('apply_calculated_delay', (data) => {
+      if (delayNode) {
+        delaySlider.value = data.delayMs;
+        delayVal.innerText = data.delayMs + ' ms';
+        delayNode.delayTime.setTargetAtTime(data.delayMs / 1000, audioCtx.currentTime, 0.1);
+      }
+    });
 
-                micMediaRecorder.ondataavailable = (e) => {
-                    if (e.data.size > 0) socket.emit('admin-mic-stream', e.data);
-                };
-                micMediaRecorder.start(100);
-                document.getElementById('mic-btn').style.background = "#da3633";
-            } catch (err) {
-                console.error("Microphone Access Error:", err);
-            }
-        }
+    // 7. WebRTC P2P Signaling Relay
+    socket.on('peer_list', (peers) => peers.forEach(id => initPeer(id, true)));
+    function initPeer(peerId, isInitiator) {
+      if (peerConnections[peerId]) return peerConnections[peerId];
+      const pc = new RTCPeerConnection(rtcConfig);
+      peerConnections[peerId] = pc;
+      pc.onicecandidate = (e) => e.candidate && socket.emit('webrtc_signal', { target: peerId, candidate: e.candidate });
+      pc.ontrack = (e) => isAudioInit && audioCtx.createMediaStreamSource(e.streams[0]).connect(channelNodes[2].gainNode);
+      if (isInitiator) {
+        pc.createOffer().then(o => { pc.setLocalDescription(o); socket.emit('webrtc_signal', { target: peerId, offer: o }); });
+      }
+      return pc;
+    }
+    socket.on('webrtc_signal', async (data) => {
+      let pc = peerConnections[data.sender];
+      if (data.offer) {
+        pc = initPeer(data.sender, false);
+        await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
+        const a = await pc.createAnswer();
+        await pc.setLocalDescription(a);
+        socket.emit('webrtc_signal', { target: data.sender, answer: a });
+      } else if (data.answer && pc) await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
+      else if (data.candidate && pc) await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+    });
 
-        function stopMicPaging() {
-            if (currentRole !== 'admin' || !micMediaRecorder) return;
-            if (micMediaRecorder.state !== 'inactive') {
-                micMediaRecorder.stop();
-                micStream.getTracks().forEach(track => track.stop());
-                socket.emit('admin-mic-state', false);
-                document.getElementById('mic-btn').style.background = "#8957e5";
-            }
-        }
+    // 8. Visualizer Loop & UI Updates
+    function drawVisualizer() {
+      requestAnimationFrame(drawVisualizer);
+      const bufferLength = analyser.frequencyBinCount;
+      const dataArray = new Uint8Array(bufferLength);
+      analyser.getByteFrequencyData(dataArray);
 
-        socket.on('listener-mic-ducking', (isSpeaking) => {
-            if (gainNode) gainNode.gain.value = isSpeaking ? 0.3 : 1.0;
-        });
+      canvasCtx.fillStyle = '#090d16';
+      canvasCtx.fillRect(0, 0, canvas.width, canvas.height);
+      const barWidth = (canvas.width / bufferLength) * 2.5;
+      let x = 0;
+      for (let i = 0; i < bufferLength; i++) {
+        const barHeight = (dataArray[i] / 255) * canvas.height;
+        canvasCtx.fillStyle = '#38bdf8';
+        canvasCtx.fillRect(x, canvas.height - barHeight, barWidth, barHeight);
+        x += barWidth + 1;
+      }
+    }
 
-        // Visualizer Engine
-        function renderVisualizerEngine() {
-            requestAnimationFrame(renderVisualizerEngine);
-            if (!analyserNode) return;
-
-            const canvas = document.getElementById('local-spectrum-canvas');
-            const ctx = canvas.getContext('2d');
-            const bufferLength = analyserNode.frequencyBinCount;
-            const dataArray = new Uint8Array(bufferLength);
-
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-            if (visMode === 'bars') {
-                analyserNode.getByteFrequencyData(dataArray);
-                const barWidth = (canvas.width / bufferLength) - 1;
-                let x = 0;
-                for (let i = 0; i < bufferLength; i++) {
-                    const barHeight = (dataArray[i] / 255) * canvas.height;
-                    ctx.fillStyle = `hsl(${200 + i * 8}, 80%, 60%)`;
-                    ctx.fillRect(x, canvas.height - barHeight, barWidth, barHeight);
-                    x += barWidth + 1;
-                }
-            } else if (visMode === 'radial') {
-                analyserNode.getByteFrequencyData(dataArray);
-                const centerX = canvas.width / 2, centerY = canvas.height / 2;
-                const radius = Math.min(centerX, centerY) - 10;
-                ctx.beginPath();
-                ctx.arc(centerX, centerY, Math.max(5, (dataArray[2] / 255) * radius), 0, 2 * Math.PI);
-                ctx.strokeStyle = "#58a6ff"; ctx.lineWidth = 3; ctx.stroke();
-            } else if (visMode === 'waveform') {
-                analyserNode.getByteTimeDomainData(dataArray);
-                ctx.lineWidth = 2; ctx.strokeStyle = "#238636"; ctx.beginPath();
-                const sliceWidth = canvas.width / bufferLength;
-                let x = 0;
-                for (let i = 0; i < bufferLength; i++) {
-                    const v = dataArray[i] / 128.0;
-                    const y = (v * canvas.height) / 2;
-                    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-                    x += sliceWidth;
-                }
-                ctx.lineTo(canvas.width, canvas.height / 2); ctx.stroke();
-            }
-
-            const compressed = Array.from(dataArray.slice(0, 16));
-            socket.emit('device-spectrum-stream', compressed);
-        }
-
-        // Auth Logic
-        function joinAs(role) {
-            currentRoomId = document.getElementById('room-id-input').value || 'MainStudio';
-            const password = role === 'admin' ? document.getElementById('admin-passcode').value : document.getElementById('listener-passcode').value;
-            
-            enableAudioEngine();
-            socket.emit('register-role', { role: role, password: password, roomId: currentRoomId });
-        }
-
-        socket.on('role-assigned', (data) => {
-            if (!data.success) {
-                const errorEl = document.getElementById('auth-error-msg');
-                errorEl.innerText = data.message; errorEl.style.display = 'block';
-                return;
-            }
-            currentRole = data.role;
-            document.getElementById('room-display').innerText = data.roomId;
-            document.getElementById('role-display').innerText = data.role.toUpperCase();
-            document.getElementById('role-selection').style.display = 'none';
-            document.getElementById('playlist-card').style.display = 'block';
-
-            if (data.role === 'admin') {
-                document.getElementById('upload-section').style.display = 'block';
-                document.getElementById('playlist-modes-row').style.display = 'flex';
-                document.getElementById('dsp-preset-card').style.display = 'block';
-                document.getElementById('admin-media-card').style.display = 'block';
-                document.getElementById('admin-devices-card').style.display = 'block';
-            }
-        });
-
-        // Interactive Playlist Operations
-        async function uploadFilesToServer(e) {
-            const files = Array.from(e.target.files);
-            const filePayloads = [];
-
-            for (const file of files) {
-                const buffer = await file.arrayBuffer();
-                filePayloads.push({ name: file.name, buffer: buffer });
-            }
-
-            socket.emit('admin-upload-tracks', filePayloads);
-        }
-
-        socket.on('load-audio-buffer', async (data) => {
-            if (!isAudioInit) initAudioContext();
-            
-            try {
-                document.getElementById('latency-display').innerText = "Status: Decoding Audio Stream...";
-                currentAudioBuffer = await audioCtx.decodeAudioData(data.buffer);
-                document.getElementById('latency-display').innerText = "Status: Audio Loaded Ready";
-            } catch (err) {
-                console.error("Audio Decode Error:", err);
-            }
-        });
-
-        socket.on('playlist-update', (data) => {
-            activePlaylist = data.playlist; 
-            activeTrackIndex = data.currentIndex;
-            
-            const btnRepeat = document.getElementById('btn-repeat');
-            const btnShuffle = document.getElementById('btn-shuffle');
-            if (btnRepeat) btnRepeat.classList.toggle('active', !!data.isRepeat);
-            if (btnShuffle) btnShuffle.classList.toggle('active', !!data.isShuffle);
-
-            const container = document.getElementById('playlist-container');
-            if (activePlaylist.length === 0) {
-                container.innerHTML = `<p class="info-text" style="padding:10px;">No tracks loaded in studio playlist.</p>`;
-                return;
-            }
-
-            container.innerHTML = activePlaylist.map((t, i) => `
-                <div class="playlist-item ${i === activeTrackIndex ? 'active' : ''}">
-                    <span onclick="selectTrack(${i})">${i + 1}. ${t.name}</span>
-                    <div class="playlist-controls">
-                        ${currentRole === 'admin' ? `
-                            <button class="btn-opt" style="padding:2px 6px;" onclick="moveTrack(${i}, -1)">▲</button>
-                            <button class="btn-opt" style="padding:2px 6px;" onclick="moveTrack(${i}, 1)">▼</button>
-                            <button class="btn-danger" onclick="removeTrack(${i})">✖</button>
-                        ` : ''}
-                    </div>
-                </div>
-            `).join('');
-        });
-
-        function selectTrack(idx) {
-            if (currentRole !== 'admin') return;
-            socket.emit('admin-select-track', idx);
-        }
-
-        function removeTrack(idx) {
-            if (currentRole !== 'admin') return;
-            socket.emit('admin-remove-track', idx);
-        }
-
-        function moveTrack(idx, direction) {
-            if (currentRole !== 'admin') return;
-            const targetIdx = idx + direction;
-            if (targetIdx < 0 || targetIdx >= activePlaylist.length) return;
-            socket.emit('admin-reorder-playlist', { fromIndex: idx, toIndex: targetIdx });
-        }
-
-        function toggleRepeat() {
-            if (currentRole !== 'admin') return;
-            socket.emit('admin-toggle-repeat');
-        }
-
-        function toggleShuffle() {
-            if (currentRole !== 'admin') return;
-            socket.emit('admin-toggle-shuffle');
-        }
-
-        function applyDspPreset(presetName) {
-            if (currentRole !== 'admin') return;
-            socket.emit('admin-apply-dsp-preset', presetName);
-        }
-
-        socket.on('apply-room-dsp-preset', (eq) => {
-            if (!isAudioInit) initAudioContext();
-            bassFilter.gain.value = eq.bass;
-            midFilter.gain.value = eq.mid;
-            trebleFilter.gain.value = eq.treble;
-        });
-
-        // Device Controls
-        socket.on('device-list-update', (devices) => {
-            connectedDevices = devices;
-            if (currentRole !== 'admin') return;
-            const container = document.getElementById('connected-devices-container');
-            container.innerHTML = devices.map(dev => `
-                <div class="device-card">
-                    <div class="device-header">
-                        <span class="device-id">${dev.id.substring(0,6)} (${dev.zone || 'Main'})</span>
-                        <span class="info-text">${dev.latency}ms latency</span>
-                    </div>
-                    <div style="margin-top:4px;">
-                        <label>Distance Delay Compensation (${dev.delayMs || 0}ms)</label>
-                        <input type="range" min="0" max="500" value="${dev.delayMs || 0}" step="10" onchange="updateDeviceDelay('${dev.id}', this.value)">
-                    </div>
-                    <div class="eq-grid">
-                        <div><label>Bass</label><input type="range" min="-12" max="12" value="${dev.eq.bass}" onchange="updateDeviceEQ('${dev.id}', 'bass', this.value)"></div>
-                        <div><label>Mid</label><input type="range" min="-12" max="12" value="${dev.eq.mid}" onchange="updateDeviceEQ('${dev.id}', 'mid', this.value)"></div>
-                        <div><label>Treble</label><input type="range" min="-12" max="12" value="${dev.eq.treble}" onchange="updateDeviceEQ('${dev.id}', 'treble', this.value)"></div>
-                    </div>
-                </div>
-            `).join('');
-        });
-
-        function updateDeviceEQ(targetId, band, val) {
-            const eqObj = {}; eqObj[band] = parseFloat(val);
-            socket.emit('admin-target-device-dsp', { targetDeviceId: targetId, eq: eqObj });
-        }
-
-        function updateDeviceDelay(targetId, delayMs) {
-            socket.emit('admin-target-device-dsp', { targetDeviceId: targetId, delayMs: parseFloat(delayMs) });
-        }
-
-        socket.on('apply-custom-dsp', (dsp) => {
-            if (!isAudioInit) initAudioContext();
-            if (dsp.isMuted) gainNode.gain.value = 0;
-            else if (dsp.volume !== undefined) gainNode.gain.value = dsp.volume;
-            if (dsp.delayMs !== undefined && delayNode) {
-                delayNode.delayTime.value = dsp.delayMs / 1000;
-            }
-            if (dsp.eq) {
-                if (dsp.eq.bass !== undefined) bassFilter.gain.value = dsp.eq.bass;
-                if (dsp.eq.mid !== undefined) midFilter.gain.value = dsp.eq.mid;
-                if (dsp.eq.treble !== undefined) trebleFilter.gain.value = dsp.eq.treble;
-            }
-        });
-
-        // Time Synchronization
-        setInterval(() => {
-            socket.emit('time-sync-ping', Date.now());
-        }, 3000);
-
-        socket.on('time-sync-pong', (data) => {
-            const now = Date.now();
-            const rtt = now - data.clientTime;
-            serverOffset = (data.serverTime + (rtt / 2)) - now;
-            socket.emit('report-latency', rtt / 2);
-        });
-
-        function sendAdminAction(action) {
-            if (currentRole !== 'admin') return;
-            socket.emit('admin-audio-action', {
-                action: action,
-                timestamp: Date.now() + serverOffset,
-                seekPosition: pauseOffsetAcc
-            });
-        }
-
-        function seekTrack(value) {
-            if (currentRole !== 'admin' || !currentAudioBuffer) return;
-            const targetPos = (value / 100) * currentAudioBuffer.duration;
-            pauseOffsetAcc = targetPos;
-            sendAdminAction('play');
-        }
-
-        function playBufferAt(offset, xfadeTime = 0) {
-            if (!currentAudioBuffer) return;
-            
-            if (bufferSource && gainNode) {
-                try {
-                    const fadeOutTime = Math.min(xfadeTime, 1.5);
-                    gainNode.gain.setValueAtTime(gainNode.gain.value, audioCtx.currentTime);
-                    gainNode.gain.linearRampToValueAtTime(0.001, audioCtx.currentTime + fadeOutTime);
-                    setTimeout(() => { try { bufferSource.stop(); } catch(e){} }, fadeOutTime * 1000);
-                } catch(e) {}
-            }
-
-            bufferSource = audioCtx.createBufferSource();
-            bufferSource.buffer = currentAudioBuffer;
-            bufferSource.playbackRate.value = masterPlaybackRate;
-            bufferSource.connect(bassFilter);
-            
-            const startPos = Math.max(0, offset % currentAudioBuffer.duration);
-
-            bufferSource.onended = () => {
-                if (isPlayingState && currentRole === 'admin') {
-                    socket.emit('admin-trigger-auto-advance');
-                }
-            };
-
-            bufferSource.start(0, startPos);
-            
-            if (gainNode) {
-                gainNode.gain.setValueAtTime(0.001, audioCtx.currentTime);
-                gainNode.gain.linearRampToValueAtTime(1.0, audioCtx.currentTime + Math.min(xfadeTime, 1.5));
-            }
-
-            startTimeAcc = audioCtx.currentTime - (startPos / masterPlaybackRate);
-            isPlayingState = true;
-        }
-
-        function stopBuffer() {
-            if (bufferSource) {
-                try { bufferSource.stop(); } catch(e) {}
-            }
-            isPlayingState = false;
-        }
-
-        socket.on('audio-sync-receive', async (data) => {
-            if (!isAudioInit) initAudioContext();
-            if (audioCtx && audioCtx.state === 'suspended') await audioCtx.resume();
-
-            if (data.action === 'play') {
-                const now = Date.now() + serverOffset;
-                const elapsedSinceStart = ((now - data.startTimestamp) / 1000) * masterPlaybackRate;
-                const targetSeek = Math.max(0, (data.seekPosition || 0) + elapsedSinceStart);
-
-                playBufferAt(targetSeek, data.crossfade || 0);
-            } else if (data.action === 'pause') {
-                stopBuffer();
-            }
-        });
-
-        // Playhead Timeline Loop
-        setInterval(() => {
-            if (isPlayingState && audioCtx && currentAudioBuffer) {
-                const currentPos = (audioCtx.currentTime - startTimeAcc) * masterPlaybackRate;
-                pauseOffsetAcc = currentPos;
-                const dur = currentAudioBuffer.duration;
-                
-                document.getElementById('curr-time-display').innerText = formatTime(currentPos);
-                document.getElementById('total-time-display').innerText = formatTime(dur);
-                document.getElementById('seek-slider').value = (currentPos / dur) * 100;
-            }
-        }, 250);
-
-        function formatTime(secs) {
-            const m = Math.floor(secs / 60) || 0;
-            const s = Math.floor(secs % 60) || 0;
-            return `${m < 10 ? '0' : ''}${m}:${s < 10 ? '0' : ''}${s}`;
-        }
-    </script>
+    socket.on('connect', () => { myIdEl.innerText = socket.id; });
+    socket.on('nodes_updated', (nodes) => {
+      nodesTable.innerHTML = nodes.map(n => `
+        <tr>
+          <td>${n.id} ${n.id === socket.id ? '<strong>(You)</strong>' : ''}</td>
+          <td>${n.delayMs} ms</td>
+          <td>${n.eqPreset}</td>
+          <td><span style="color: var(--green)">Active</span></td>
+        </tr>
+      `).join('');
+    });
+  </script>
 </body>
 </html>
