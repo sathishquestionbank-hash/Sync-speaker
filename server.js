@@ -4,6 +4,8 @@ const { Server } = require('socket.io');
 
 const app = express();
 const server = http.createServer(app);
+
+// Initialize Socket.io with permissive CORS for cloud deployment
 const io = new Server(server, {
   cors: { origin: "*", methods: ["GET", "POST"] }
 });
@@ -104,7 +106,7 @@ app.get('/', (req, res) => {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Sync Speaker Studio - Ahuja 212PRO Edition</title>
+  <title>Sync Speaker Studio — Ahuja FMX-212PRO Console</title>
   <style>
     :root {
       --bg: #0b0f19;
@@ -222,9 +224,7 @@ app.get('/', (req, res) => {
     <!-- 3. 12-Channel Input Mixer Panel -->
     <div class="card" style="margin-bottom: 1.5rem;">
       <h3>5. 12-Channel Input Mixer Strip</h3>
-      <div class="mixer-channels" id="mixer-strips">
-        <!-- Generated Dynamically -->
-      </div>
+      <div class="mixer-channels" id="mixer-strips"></div>
     </div>
 
     <!-- 4. Real-Time Visualizer -->
@@ -290,11 +290,11 @@ app.get('/', (req, res) => {
     const canvas = document.getElementById('visualizer');
     const canvasCtx = canvas.getContext('2d');
 
-    // Render 12 Mixer Channel UI Strips
+    // Dynamically Render 12 Mixer Channel UI Strips
     const stripsContainer = document.getElementById('mixer-strips');
     for (let i = 1; i <= 12; i++) {
       const isStereo = i >= 11;
-      stripsContainer.innerHTML += `
+      stripsContainer.innerHTML += \`
         <div class="channel-strip">
           <h4>\${isStereo ? 'Ch ' + i + ' (ST)' : 'Ch ' + i}</h4>
           <label class="control-label">GAIN</label>
@@ -308,7 +308,7 @@ app.get('/', (req, res) => {
           <label class="control-label">AUX/FX SEND</label>
           <input type="range" id="ch-fx-\${i}" min="0" max="1" step="0.05" value="0" disabled>
         </div>
-      `;
+      \`;
     }
 
     // 1. NTP Time Synchronization Protocol
@@ -352,7 +352,7 @@ app.get('/', (req, res) => {
       fxGain = audioCtx.createGain();
       fxGain.gain.value = 0.3;
       fxDelayNode = audioCtx.createDelay();
-      fxDelayNode.delayTime.value = 0.35; // 350ms echo
+      fxDelayNode.delayTime.value = 0.35;
 
       // Synthetic Reverb Impulse Generation
       fxConvolver = audioCtx.createConvolver();
@@ -430,7 +430,7 @@ app.get('/', (req, res) => {
       
       audioElement = new Audio(URL.createObjectURL(file));
       audioSourceNode = audioCtx.createMediaElementSource(audioElement);
-      audioSourceNode.connect(channelNodes[11].gainNode); // Route to Ch 11 Stereo
+      audioSourceNode.connect(channelNodes[11].gainNode);
       btnPlay.disabled = false;
       btnPause.disabled = false;
     });
@@ -575,14 +575,14 @@ app.get('/', (req, res) => {
 
     socket.on('connect', () => { myIdEl.innerText = socket.id; });
     socket.on('nodes_updated', (nodes) => {
-      nodesTable.innerHTML = nodes.map(n => `
+      nodesTable.innerHTML = nodes.map(n => \`
         <tr>
           <td>\${n.id} \${n.id === socket.id ? '<strong>(You)</strong>' : ''}</td>
           <td>\${n.delayMs} ms</td>
           <td>\${n.eqPreset}</td>
           <td><span style="color: var(--green)">Active</span></td>
         </tr>
-      `).join('');
+      \`).join('');
     });
   </script>
 </body>
@@ -590,7 +590,8 @@ app.get('/', (req, res) => {
   `);
 });
 
+// Render automatically assigns PORT via environment variable
 const PORT = process.env.PORT || 10000;
 server.listen(PORT, '0.0.0.0', () => {
-  console.log(`Sync Speaker Studio running on port ${PORT}`);
+  console.log(`[Sync Speaker Studio] Running on port ${PORT}`);
 });
