@@ -3,260 +3,81 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="A fully functional HTML, CSS, and JavaScript web page template.">
-  <title>Modern Web Page Template</title>
-  
+  <title>Sync Speaker Studio</title>
   <style>
-    /* CSS Variables for Themes */
-    :root {
-      --bg-color: #f8fafc;
-      --card-bg: #ffffff;
-      --text-color: #0f172a;
-      --text-muted: #64748b;
-      --primary: #2563eb;
-      --primary-hover: #1d4ed8;
-      --border: #e2e8f0;
-      --radius: 8px;
-    }
-
-    [data-theme="dark"] {
-      --bg-color: #0f172a;
-      --card-bg: #1e293b;
-      --text-color: #f8fafc;
-      --text-muted: #94a3b8;
-      --primary: #3b82f6;
-      --primary-hover: #60a5fa;
-      --border: #334155;
-    }
-
-    /* Base Reset & Styles */
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-    }
-
-    body {
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      background-color: var(--bg-color);
-      color: var(--text-color);
-      line-height: 1.6;
-      transition: background-color 0.3s, color 0.3s;
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
-    }
-
-    /* Header & Navigation */
-    header {
-      background-color: var(--card-bg);
-      border-bottom: 1px solid var(--border);
-      padding: 1rem 2rem;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      position: sticky;
-      top: 0;
-      z-index: 10;
-    }
-
-    .logo {
-      font-weight: 700;
-      font-size: 1.25rem;
-      color: var(--primary);
-    }
-
-    .theme-toggle {
-      background: transparent;
-      border: 1px solid var(--border);
-      color: var(--text-color);
-      padding: 0.5rem 1rem;
-      border-radius: var(--radius);
-      cursor: pointer;
-      font-size: 0.9rem;
-      transition: background-color 0.2s;
-    }
-
-    .theme-toggle:hover {
-      background-color: var(--border);
-    }
-
-    /* Main Content Layout */
-    main {
-      flex: 1;
-      max-width: 1000px;
-      width: 100%;
-      margin: 2rem auto;
-      padding: 0 1rem;
-    }
-
-    .hero {
-      text-align: center;
-      margin-bottom: 3rem;
-    }
-
-    .hero h1 {
-      font-size: 2.5rem;
-      margin-bottom: 0.5rem;
-    }
-
-    .hero p {
-      color: var(--text-muted);
-      font-size: 1.1rem;
-    }
-
-    /* Card Grid */
-    .grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-      gap: 1.5rem;
-      margin-bottom: 3rem;
-    }
-
-    .card {
-      background-color: var(--card-bg);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 1.5rem;
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
-    }
-
-    .card h3 {
-      margin-bottom: 0.5rem;
-    }
-
-    .card p {
-      color: var(--text-muted);
-      font-size: 0.95rem;
-    }
-
-    /* Interactive Section */
-    .interactive-section {
-      background-color: var(--card-bg);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 2rem;
-      text-align: center;
-    }
-
-    .btn {
-      background-color: var(--primary);
-      color: #ffffff;
-      border: none;
-      padding: 0.75rem 1.5rem;
-      border-radius: var(--radius);
-      font-size: 1rem;
-      font-weight: 600;
-      cursor: pointer;
-      transition: background-color 0.2s;
-      margin-top: 1rem;
-    }
-
-    .btn:hover {
-      background-color: var(--primary-hover);
-    }
-
-    .counter-display {
-      font-size: 2rem;
-      font-weight: 700;
-      margin: 0.5rem 0;
-    }
-
-    /* Footer */
-    footer {
-      background-color: var(--card-bg);
-      border-top: 1px solid var(--border);
-      text-align: center;
-      padding: 1.5rem;
-      color: var(--text-muted);
-      font-size: 0.875rem;
-    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, -apple-system, sans-serif; background: #0f172a; color: #f8fafc; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+    .card { background: #1e293b; padding: 2rem; border-radius: 12px; text-align: center; max-width: 420px; width: 90%; border: 1px solid #334155; box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3); }
+    h2 { margin-bottom: 0.5rem; font-size: 1.5rem; }
+    audio { width: 100%; margin: 1.5rem 0; }
+    .status { font-size: 0.875rem; color: #94a3b8; font-weight: 500; }
+    .status.online { color: #22c55e; }
   </style>
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 </head>
 <body>
 
-  <!-- Navigation Bar -->
-  <header>
-    <div class="logo">MyBrand</div>
-    <button class="theme-toggle" id="themeToggle" aria-label="Toggle Theme">Toggle Dark Mode</button>
-  </header>
+  <div class="card">
+    <h2>Sync Speaker Studio</h2>
+    <p class="status" id="status">● Connecting to server...</p>
 
-  <!-- Main Content Area -->
-  <main>
-    <section class="hero">
-      <h1>Responsive Web Template</h1>
-      <p>Clean semantic layout, CSS grid card structure, and interactive JavaScript features.</p>
-    </section>
+    <audio id="audioPlayer" controls>
+      <source src="https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3" type="audio/mpeg">
+      Your browser does not support the audio element.
+    </audio>
+  </div>
 
-    <!-- Cards Layout -->
-    <section class="grid">
-      <article class="card">
-        <h3>Semantic Structure</h3>
-        <p>Uses proper HTML5 elements like header, main, section, article, and footer for optimal accessibility and SEO.</p>
-      </article>
-
-      <article class="card">
-        <h3>CSS Variables</h3>
-        <p>Built with native CSS custom properties, allowing theme switching and global style adjustments.</p>
-      </article>
-
-      <article class="card">
-        <h3>Mobile Responsive</h3>
-        <p>Utilizes auto-fitting CSS Grid layout that dynamically adjusts to screens of any width.</p>
-      </article>
-    </section>
-
-    <!-- Interactive JS Section -->
-    <section class="interactive-section">
-      <h2>Interactive Demo</h2>
-      <p>Click the button below to update the counter value via JavaScript.</p>
-      <div class="counter-display" id="counterValue">0</div>
-      <button class="btn" id="incrementBtn">Increment Counter</button>
-    </section>
-  </main>
-
-  <!-- Footer -->
-  <footer>
-    <p>&copy; <span id="currentYear"></span> MyBrand. All rights reserved.</p>
-  </footer>
-
-  <!-- JavaScript Logic -->
   <script>
-    // 1. Theme Toggle Logic
-    const themeToggleBtn = document.getElementById('themeToggle');
-    const prefersDarkScheme = window.matchMedia('(prefers-color-scheme: dark)');
+    // Auto-connect to current domain (local or cloud host)
+    const socket = io(window.location.origin);
+    
+    const audio = document.getElementById('audioPlayer');
+    const status = document.getElementById('status');
 
-    // Check saved theme or system preferences
-    const savedTheme = localStorage.getItem('theme');
-    if (savedTheme === 'dark' || (!savedTheme && prefersDarkScheme.matches)) {
-      document.documentElement.setAttribute('data-theme', 'dark');
-    }
+    let isRemoteChange = false;
 
-    themeToggleBtn.addEventListener('click', () => {
-      const currentTheme = document.documentElement.getAttribute('data-theme');
-      let targetTheme = 'light';
-
-      if (currentTheme !== 'dark') {
-        targetTheme = 'dark';
-      }
-
-      document.documentElement.setAttribute('data-theme', targetTheme);
-      localStorage.setItem('theme', targetTheme);
+    socket.on('connect', () => {
+      status.textContent = '● Connected & Synced';
+      status.className = 'status online';
     });
 
-    // 2. Interactive Counter Logic
-    let count = 0;
-    const counterDisplay = document.getElementById('counterValue');
-    const incrementBtn = document.getElementById('incrementBtn');
-
-    incrementBtn.addEventListener('click', () => {
-      count++;
-      counterDisplay.textContent = count;
+    socket.on('disconnect', () => {
+      status.textContent = '● Disconnected';
+      status.className = 'status';
     });
 
-    // 3. Dynamic Footer Year
-    document.getElementById('currentYear').textContent = new Date().getFullYear();
+    // Handle incoming events
+    socket.on('play', (data) => {
+      isRemoteChange = true;
+      audio.currentTime = data.time;
+      audio.play().then(() => { isRemoteChange = false; }).catch(() => { isRemoteChange = false; });
+    });
+
+    socket.on('pause', (data) => {
+      isRemoteChange = true;
+      audio.currentTime = data.time;
+      audio.pause();
+      isRemoteChange = false;
+    });
+
+    socket.on('seek', (data) => {
+      isRemoteChange = true;
+      audio.currentTime = data.time;
+      isRemoteChange = false;
+    });
+
+    // Handle outgoing local user actions
+    audio.addEventListener('play', () => {
+      if (!isRemoteChange) socket.emit('play', { time: audio.currentTime });
+    });
+
+    audio.addEventListener('pause', () => {
+      if (!isRemoteChange) socket.emit('pause', { time: audio.currentTime });
+    });
+
+    audio.addEventListener('seeked', () => {
+      if (!isRemoteChange) socket.emit('seek', { time: audio.currentTime });
+    });
   </script>
-
 </body>
 </html>
