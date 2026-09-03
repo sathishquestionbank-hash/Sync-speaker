@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Sync Speaker Studio - Admin Mode</title>
+  <title>Sync Speaker Studio - Admin Queue & Mixer</title>
   <style>
     :root {
       --bg: #0f172a;
@@ -15,14 +15,29 @@
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); padding: 1.5rem; display: flex; flex-direction: column; align-items: center; min-height: 100vh; }
+    
     .header { width: 100%; max-width: 900px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; background: var(--panel); padding: 1rem; border-radius: 8px; border: 1px solid #334155; }
     .status { font-size: 0.85rem; color: #94a3b8; }
     .status.online { color: var(--green); }
     .badge { font-size: 0.75rem; padding: 0.2rem 0.5rem; border-radius: 4px; background: #334155; margin-left: 0.5rem; }
     .badge.admin { background: #0284c7; }
     
-    .main-deck { width: 100%; max-width: 900px; background: var(--panel); padding: 1.5rem; border-radius: 8px; border: 1px solid #334155; margin-bottom: 1.5rem; }
-    audio { width: 100%; margin-top: 1rem; }
+    .grid-deck { width: 100%; max-width: 900px; display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.5rem; }
+    @media (max-width: 768px) { .grid-deck { grid-template-columns: 1fr; } }
+
+    .card { background: var(--panel); padding: 1.25rem; border-radius: 8px; border: 1px solid #334155; display: flex; flex-direction: column; gap: 0.75rem; }
+    audio { width: 100%; margin-top: 0.5rem; }
+
+    /* Queue & Playlist UI */
+    .queue-list { list-style: none; max-height: 180px; overflow-y: auto; background: #0f172a; border: 1px solid #334155; border-radius: 6px; padding: 0.5rem; }
+    .queue-item { display: flex; justify-content: space-between; align-items: center; padding: 0.5rem; font-size: 0.85rem; border-bottom: 1px solid #1e293b; }
+    .queue-item.active { border-left: 3px solid var(--accent); background: #1e293b; font-weight: bold; }
+    .queue-item-title { text-overflow: ellipsis; overflow: hidden; white-space: nowrap; max-width: 200px; }
+    .item-actions { display: flex; gap: 0.3rem; }
+
+    /* Form Controls */
+    .input-group { display: flex; gap: 0.5rem; }
+    input[type="text"], input[type="url"], input[type="password"] { width: 100%; padding: 0.5rem; background: #0f172a; border: 1px solid #334155; color: white; border-radius: 4px; font-size: 0.85rem; }
 
     /* Mixer Board Layout */
     .mixer { width: 100%; max-width: 900px; display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1rem; }
@@ -33,17 +48,16 @@
     .control-group label { color: #94a3b8; }
     input[type="range"] { width: 60%; }
     
-    .btn { background: #0284c7; border: none; color: white; padding: 0.5rem 1rem; border-radius: 4px; cursor: pointer; font-size: 0.85rem; }
+    .btn { background: #0284c7; border: none; color: white; padding: 0.4rem 0.8rem; border-radius: 4px; cursor: pointer; font-size: 0.8rem; }
+    .btn-danger { background: var(--mute); }
     .btn-mute { background: #334155; border: none; color: white; padding: 0.4rem; border-radius: 4px; cursor: pointer; font-size: 0.8rem; width: 100%; }
     .btn-mute.active { background: var(--mute); }
 
-    /* Disabled Controls for Non-Admins */
     .disabled { opacity: 0.4; pointer-events: none; }
 
-    /* Modal Styling */
+    /* Modal */
     .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); justify-content: center; align-items: center; }
     .modal-content { background: var(--panel); padding: 2rem; border-radius: 8px; border: 1px solid #334155; text-align: center; max-width: 320px; width: 90%; }
-    .modal-content input { width: 100%; padding: 0.5rem; margin: 1rem 0; background: #0f172a; border: 1px solid #334155; color: white; border-radius: 4px; }
   </style>
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 </head>
@@ -59,205 +73,184 @@
     </div>
   </div>
 
-  <div class="main-deck">
-    <h3>Master Transport Controls</h3>
-    <p id="status" class="status">● Connecting...</p>
-    <audio id="audioPlayer" controls crossOrigin="anonymous">
-      <source src="https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3" type="audio/mpeg">
-    </audio>
+  <div class="grid-deck">
+    <!-- Master Audio Transport -->
+    <div class="card">
+      <h3>Master Deck</h3>
+      <p id="nowPlayingText" style="font-size: 0.85rem; color: var(--accent);">Track: Default Demo Track</p>
+      <p id="status" class="status">● Connecting...</p>
+      <audio id="audioPlayer" controls crossOrigin="anonymous">
+        <source id="audioSource" src="https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3" type="audio/mpeg">
+      </audio>
+    </div>
+
+    <!-- Playlist & Queue Control -->
+    <div class="card">
+      <h3>Song Queue</h3>
+      <ul id="queueList" class="queue-list"></ul>
+      
+      <!-- Admin Add Song Inputs -->
+      <div id="adminQueueControls" class="disabled" style="display: flex; flex-direction: column; gap: 0.5rem;">
+        <input type="text" id="songTitleInput" placeholder="Song Title">
+        <div class="input-group">
+          <input type="url" id="songUrlInput" placeholder="Audio File URL (.mp3)">
+          <button id="btnAddSong" class="btn">Add</button>
+        </div>
+      </div>
+    </div>
   </div>
 
-  <!-- Mixer Controls (Disabled by default until Admin logs in) -->
+  <!-- Mixer Board -->
   <div id="mixerBoard" class="mixer disabled">
-    <!-- Channel 1: Ahuja Console Logic -->
     <div class="channel-strip">
       <div class="channel-title">CH 1: Ahuja Console</div>
-      
-      <div class="control-group">
-        <label>Gain / Vol</label>
-        <input type="range" id="vol1" min="0" max="1" step="0.01" value="0.8">
-      </div>
-      
-      <div class="control-group">
-        <label>EQ Low</label>
-        <input type="range" id="eqLow1" min="-12" max="12" step="1" value="0">
-      </div>
-      
-      <div class="control-group">
-        <label>EQ Mid</label>
-        <input type="range" id="eqMid1" min="-12" max="12" step="1" value="0">
-      </div>
-
-      <div class="control-group">
-        <label>EQ High</label>
-        <input type="range" id="eqHigh1" min="-12" max="12" step="1" value="0">
-      </div>
-
+      <div class="control-group"><label>Gain / Vol</label><input type="range" id="vol1" min="0" max="1" step="0.01" value="0.8"></div>
+      <div class="control-group"><label>EQ Low</label><input type="range" id="eqLow1" min="-12" max="12" step="1" value="0"></div>
+      <div class="control-group"><label>EQ Mid</label><input type="range" id="eqMid1" min="-12" max="12" step="1" value="0"></div>
+      <div class="control-group"><label>EQ High</label><input type="range" id="eqHigh1" min="-12" max="12" step="1" value="0"></div>
       <button id="mute1" class="btn-mute">MUTE</button>
     </div>
 
-    <!-- Master DSP FX -->
     <div class="channel-strip">
       <div class="channel-title">DSP Master FX Bus</div>
-      
-      <div class="control-group">
-        <label>Delay Time</label>
-        <input type="range" id="fxDelay" min="0" max="1" step="0.05" value="0">
-      </div>
-
-      <div class="control-group">
-        <label>Reverb Feedback</label>
-        <input type="range" id="fxReverb" min="0" max="0.9" step="0.05" value="0">
-      </div>
+      <div class="control-group"><label>Delay Time</label><input type="range" id="fxDelay" min="0" max="1" step="0.05" value="0"></div>
+      <div class="control-group"><label>Reverb Feedback</label><input type="range" id="fxReverb" min="0" max="0.9" step="0.05" value="0"></div>
     </div>
   </div>
 
-  <!-- Password Modal -->
+  <!-- Admin Modal -->
   <div id="loginModal" class="modal">
     <div class="modal-content">
-      <h3>Admin Authentication</h3>
+      <h3 style="margin-bottom: 1rem;">Admin Authentication</h3>
       <input type="password" id="adminPassword" placeholder="Enter password...">
-      <button id="btnSubmitPassword" class="btn" style="width: 100%;">Login</button>
+      <button id="btnSubmitPassword" class="btn" style="width: 100%; margin-top: 1rem;">Login</button>
     </div>
   </div>
 
   <script>
     const socket = io(window.location.origin);
     const audio = document.getElementById('audioPlayer');
+    const audioSource = document.getElementById('audioSource');
     const status = document.getElementById('status');
     const mixerBoard = document.getElementById('mixerBoard');
+    const adminQueueControls = document.getElementById('adminQueueControls');
     const roleBadge = document.getElementById('roleBadge');
-    
+    const queueList = document.getElementById('queueList');
+    const nowPlayingText = document.getElementById('nowPlayingText');
+
     let isAdmin = false;
     let isRemoteChange = false;
+    let currentPlaylist = [];
+    let currentSongIdx = 0;
 
-    // Web Audio API Elements
     let audioCtx, source, gainNode, lowFilter, midFilter, highFilter, delayNode, feedbackNode;
 
     function initAudioContext() {
       if (audioCtx) return;
       audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-      
       source = audioCtx.createMediaElementSource(audio);
       gainNode = audioCtx.createGain();
 
-      lowFilter = audioCtx.createBiquadFilter();
-      lowFilter.type = "lowshelf";
-      lowFilter.frequency.value = 320;
+      lowFilter = audioCtx.createBiquadFilter(); lowFilter.type = "lowshelf"; lowFilter.frequency.value = 320;
+      midFilter = audioCtx.createBiquadFilter(); midFilter.type = "peaking"; midFilter.frequency.value = 1000;
+      highFilter = audioCtx.createBiquadFilter(); highFilter.type = "highshelf"; highFilter.frequency.value = 3200;
 
-      midFilter = audioCtx.createBiquadFilter();
-      midFilter.type = "peaking";
-      midFilter.frequency.value = 1000;
+      delayNode = audioCtx.createDelay(); feedbackNode = audioCtx.createGain();
 
-      highFilter = audioCtx.createBiquadFilter();
-      highFilter.type = "highshelf";
-      highFilter.frequency.value = 3200;
-
-      delayNode = audioCtx.createDelay();
-      feedbackNode = audioCtx.createGain();
-
-      source.connect(lowFilter);
-      lowFilter.connect(midFilter);
-      midFilter.connect(highFilter);
-      highFilter.connect(gainNode);
-
-      gainNode.connect(delayNode);
-      delayNode.connect(feedbackNode);
-      feedbackNode.connect(delayNode);
-      delayNode.connect(audioCtx.destination);
-
+      source.connect(lowFilter); lowFilter.connect(midFilter); midFilter.connect(highFilter); highFilter.connect(gainNode);
+      gainNode.connect(delayNode); delayNode.connect(feedbackNode); feedbackNode.connect(delayNode); delayNode.connect(audioCtx.destination);
       gainNode.connect(audioCtx.destination);
     }
 
     // Modal Events
-    const loginModal = document.getElementById('loginModal');
-    document.getElementById('btnAdmin').addEventListener('click', () => {
-      loginModal.style.display = 'flex';
-    });
-
+    document.getElementById('btnAdmin').addEventListener('click', () => { document.getElementById('loginModal').style.display = 'flex'; });
     document.getElementById('btnSubmitPassword').addEventListener('click', () => {
-      const password = document.getElementById('adminPassword').value;
-      socket.emit('admin_login', { password });
+      socket.emit('admin_login', { password: document.getElementById('adminPassword').value });
     });
 
     socket.on('login_result', (data) => {
       if (data.success) {
         isAdmin = true;
-        loginModal.style.display = 'none';
+        document.getElementById('loginModal').style.display = 'none';
         mixerBoard.classList.remove('disabled');
+        adminQueueControls.classList.remove('disabled');
         roleBadge.textContent = 'Admin Mode';
         roleBadge.classList.add('admin');
         document.getElementById('btnAdmin').style.display = 'none';
-      } else {
-        alert(data.message);
+        renderQueue();
+      } else { alert(data.message); }
+    });
+
+    // Queue Interactions
+    document.getElementById('btnAddSong').addEventListener('click', () => {
+      const title = document.getElementById('songTitleInput').value.trim();
+      const url = document.getElementById('songUrlInput').value.trim();
+      if (title && url) {
+        socket.emit('add_to_queue', { id: 'song-' + Date.now(), title, url });
+        document.getElementById('songTitleInput').value = '';
+        document.getElementById('songUrlInput').value = '';
       }
     });
 
-    // Network Sync
-    socket.on('connect', () => {
-      status.textContent = '● Connected to Server';
-      status.className = 'status online';
+    socket.on('queue_update', (data) => {
+      currentPlaylist = data.playlist;
+      currentSongIdx = data.currentSongIndex;
+      renderQueue();
     });
 
-    socket.on('play', (data) => {
+    socket.on('change_track', (data) => {
       isRemoteChange = true;
-      audio.currentTime = data.time;
+      audioSource.src = data.song.url;
+      audio.load();
+      nowPlayingText.textContent = `Track: ${data.song.title}`;
       audio.play().then(() => { isRemoteChange = false; }).catch(() => { isRemoteChange = false; });
     });
 
-    socket.on('pause', (data) => {
-      isRemoteChange = true;
-      audio.currentTime = data.time;
-      audio.pause();
-      isRemoteChange = false;
-    });
+    function renderQueue() {
+      queueList.innerHTML = '';
+      currentPlaylist.forEach((song, idx) => {
+        const li = document.createElement('li');
+        li.className = `queue-item ${idx === currentSongIdx ? 'active' : ''}`;
+        
+        let controlsHtml = '';
+        if (isAdmin) {
+          controlsHtml = `
+            <div class="item-actions">
+              <button class="btn" onclick="selectSong(${idx})">Play</button>
+              <button class="btn btn-danger" onclick="removeSong(${idx})">✕</button>
+            </div>`;
+        }
 
-    socket.on('seek', (data) => {
-      isRemoteChange = true;
-      audio.currentTime = data.time;
-      isRemoteChange = false;
-    });
+        li.innerHTML = `<span class="queue-item-title">${idx + 1}. ${song.title}</span>${controlsHtml}`;
+        queueList.appendChild(li);
+      });
+    }
 
-    socket.on('mixer_update', (data) => {
-      if (document.getElementById(data.id)) {
-        document.getElementById(data.id).value = data.value;
-        applyMixerSetting(data.id, data.value);
-      }
-    });
+    window.selectSong = (index) => { socket.emit('select_song', index); };
+    window.removeSong = (index) => { socket.emit('remove_from_queue', index); };
 
-    // Local Admin Action Emitters
+    // Socket Sync Events
+    socket.on('connect', () => { status.textContent = '● Connected'; status.className = 'status online'; });
+    socket.on('play', (data) => {
+      isRemoteChange = true; audio.currentTime = data.time; audio.play().then(() => { isRemoteChange = false; });
+    });
+    socket.on('pause', (data) => { isRemoteChange = true; audio.currentTime = data.time; audio.pause(); isRemoteChange = false; });
+    socket.on('seek', (data) => { isRemoteChange = true; audio.currentTime = data.time; isRemoteChange = false; });
+
+    // Local Event Emitters
     audio.addEventListener('play', () => {
       initAudioContext();
       if (audioCtx.state === 'suspended') audioCtx.resume();
       if (isAdmin && !isRemoteChange) socket.emit('play', { time: audio.currentTime });
     });
+    audio.addEventListener('pause', () => { if (isAdmin && !isRemoteChange) socket.emit('pause', { time: audio.currentTime }); });
+    audio.addEventListener('seeked', () => { if (isAdmin && !isRemoteChange) socket.emit('seek', { time: audio.currentTime }); });
 
-    audio.addEventListener('pause', () => {
-      if (isAdmin && !isRemoteChange) socket.emit('pause', { time: audio.currentTime });
-    });
-
-    audio.addEventListener('seeked', () => {
-      if (isAdmin && !isRemoteChange) socket.emit('seek', { time: audio.currentTime });
-    });
-
-    function applyMixerSetting(id, val) {
-      if (!audioCtx) return;
-      const v = parseFloat(val);
-      if (id === 'vol1') gainNode.gain.value = v;
-      if (id === 'eqLow1') lowFilter.gain.value = v;
-      if (id === 'eqMid1') midFilter.gain.value = v;
-      if (id === 'eqHigh1') highFilter.gain.value = v;
-      if (id === 'fxDelay') delayNode.delayTime.value = v;
-      if (id === 'fxReverb') feedbackNode.gain.value = v;
-    }
-
-    document.querySelectorAll('input[type="range"]').forEach(input => {
-      input.addEventListener('input', (e) => {
-        if (!isAdmin) return;
-        initAudioContext();
-        applyMixerSetting(e.target.id, e.target.value);
-        socket.emit('mixer_update', { id: e.target.id, value: e.target.value });
-      });
+    // Auto-advance track on ended
+    audio.addEventListener('ended', () => {
+      if (isAdmin && currentSongIdx + 1 < currentPlaylist.length) {
+        selectSong(currentSongIdx + 1);
+      }
     });
   </script>
 </body>
