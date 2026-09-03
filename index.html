@@ -3,50 +3,202 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Sync Speaker Studio</title>
+  <title>Sync Speaker Studio - Admin Mode</title>
   <style>
+    :root {
+      --bg: #0f172a;
+      --panel: #1e293b;
+      --accent: #38bdf8;
+      --text: #f8fafc;
+      --mute: #ef4444;
+      --green: #22c55e;
+    }
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: system-ui, -apple-system, sans-serif; background: #0f172a; color: #f8fafc; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
-    .card { background: #1e293b; padding: 2rem; border-radius: 12px; text-align: center; max-width: 420px; width: 90%; border: 1px solid #334155; box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3); }
-    h2 { margin-bottom: 0.5rem; font-size: 1.5rem; }
-    audio { width: 100%; margin: 1.5rem 0; }
-    .status { font-size: 0.875rem; color: #94a3b8; font-weight: 500; }
-    .status.online { color: #22c55e; }
+    body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); padding: 1.5rem; display: flex; flex-direction: column; align-items: center; min-height: 100vh; }
+    .header { width: 100%; max-width: 900px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; background: var(--panel); padding: 1rem; border-radius: 8px; border: 1px solid #334155; }
+    .status { font-size: 0.85rem; color: #94a3b8; }
+    .status.online { color: var(--green); }
+    .badge { font-size: 0.75rem; padding: 0.2rem 0.5rem; border-radius: 4px; background: #334155; margin-left: 0.5rem; }
+    .badge.admin { background: #0284c7; }
+    
+    .main-deck { width: 100%; max-width: 900px; background: var(--panel); padding: 1.5rem; border-radius: 8px; border: 1px solid #334155; margin-bottom: 1.5rem; }
+    audio { width: 100%; margin-top: 1rem; }
+
+    /* Mixer Board Layout */
+    .mixer { width: 100%; max-width: 900px; display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1rem; }
+    .channel-strip { background: #0f172a; border: 1px solid #334155; padding: 1rem; border-radius: 6px; display: flex; flex-direction: column; gap: 0.75rem; }
+    .channel-title { font-size: 0.9rem; font-weight: bold; text-align: center; color: var(--accent); border-bottom: 1px solid #334155; padding-bottom: 0.5rem; }
+    
+    .control-group { display: flex; justify-content: space-between; align-items: center; font-size: 0.8rem; }
+    .control-group label { color: #94a3b8; }
+    input[type="range"] { width: 60%; }
+    
+    .btn { background: #0284c7; border: none; color: white; padding: 0.5rem 1rem; border-radius: 4px; cursor: pointer; font-size: 0.85rem; }
+    .btn-mute { background: #334155; border: none; color: white; padding: 0.4rem; border-radius: 4px; cursor: pointer; font-size: 0.8rem; width: 100%; }
+    .btn-mute.active { background: var(--mute); }
+
+    /* Disabled Controls for Non-Admins */
+    .disabled { opacity: 0.4; pointer-events: none; }
+
+    /* Modal Styling */
+    .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); justify-content: center; align-items: center; }
+    .modal-content { background: var(--panel); padding: 2rem; border-radius: 8px; border: 1px solid #334155; text-align: center; max-width: 320px; width: 90%; }
+    .modal-content input { width: 100%; padding: 0.5rem; margin: 1rem 0; background: #0f172a; border: 1px solid #334155; color: white; border-radius: 4px; }
   </style>
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 </head>
 <body>
 
-  <div class="card">
-    <h2>Sync Speaker Studio</h2>
-    <p class="status" id="status">● Connecting to server...</p>
+  <div class="header">
+    <div>
+      <h2>Sync Speaker Studio</h2>
+      <span id="roleBadge" class="badge">Listener Mode</span>
+    </div>
+    <div>
+      <button id="btnAdmin" class="btn">Admin Login</button>
+    </div>
+  </div>
 
-    <audio id="audioPlayer" controls>
+  <div class="main-deck">
+    <h3>Master Transport Controls</h3>
+    <p id="status" class="status">● Connecting...</p>
+    <audio id="audioPlayer" controls crossOrigin="anonymous">
       <source src="https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3" type="audio/mpeg">
-      Your browser does not support the audio element.
     </audio>
   </div>
 
+  <!-- Mixer Controls (Disabled by default until Admin logs in) -->
+  <div id="mixerBoard" class="mixer disabled">
+    <!-- Channel 1: Ahuja Console Logic -->
+    <div class="channel-strip">
+      <div class="channel-title">CH 1: Ahuja Console</div>
+      
+      <div class="control-group">
+        <label>Gain / Vol</label>
+        <input type="range" id="vol1" min="0" max="1" step="0.01" value="0.8">
+      </div>
+      
+      <div class="control-group">
+        <label>EQ Low</label>
+        <input type="range" id="eqLow1" min="-12" max="12" step="1" value="0">
+      </div>
+      
+      <div class="control-group">
+        <label>EQ Mid</label>
+        <input type="range" id="eqMid1" min="-12" max="12" step="1" value="0">
+      </div>
+
+      <div class="control-group">
+        <label>EQ High</label>
+        <input type="range" id="eqHigh1" min="-12" max="12" step="1" value="0">
+      </div>
+
+      <button id="mute1" class="btn-mute">MUTE</button>
+    </div>
+
+    <!-- Master DSP FX -->
+    <div class="channel-strip">
+      <div class="channel-title">DSP Master FX Bus</div>
+      
+      <div class="control-group">
+        <label>Delay Time</label>
+        <input type="range" id="fxDelay" min="0" max="1" step="0.05" value="0">
+      </div>
+
+      <div class="control-group">
+        <label>Reverb Feedback</label>
+        <input type="range" id="fxReverb" min="0" max="0.9" step="0.05" value="0">
+      </div>
+    </div>
+  </div>
+
+  <!-- Password Modal -->
+  <div id="loginModal" class="modal">
+    <div class="modal-content">
+      <h3>Admin Authentication</h3>
+      <input type="password" id="adminPassword" placeholder="Enter password...">
+      <button id="btnSubmitPassword" class="btn" style="width: 100%;">Login</button>
+    </div>
+  </div>
+
   <script>
-    // Auto-connect to current domain (local or cloud host)
     const socket = io(window.location.origin);
-    
     const audio = document.getElementById('audioPlayer');
     const status = document.getElementById('status');
-
+    const mixerBoard = document.getElementById('mixerBoard');
+    const roleBadge = document.getElementById('roleBadge');
+    
+    let isAdmin = false;
     let isRemoteChange = false;
 
+    // Web Audio API Elements
+    let audioCtx, source, gainNode, lowFilter, midFilter, highFilter, delayNode, feedbackNode;
+
+    function initAudioContext() {
+      if (audioCtx) return;
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      
+      source = audioCtx.createMediaElementSource(audio);
+      gainNode = audioCtx.createGain();
+
+      lowFilter = audioCtx.createBiquadFilter();
+      lowFilter.type = "lowshelf";
+      lowFilter.frequency.value = 320;
+
+      midFilter = audioCtx.createBiquadFilter();
+      midFilter.type = "peaking";
+      midFilter.frequency.value = 1000;
+
+      highFilter = audioCtx.createBiquadFilter();
+      highFilter.type = "highshelf";
+      highFilter.frequency.value = 3200;
+
+      delayNode = audioCtx.createDelay();
+      feedbackNode = audioCtx.createGain();
+
+      source.connect(lowFilter);
+      lowFilter.connect(midFilter);
+      midFilter.connect(highFilter);
+      highFilter.connect(gainNode);
+
+      gainNode.connect(delayNode);
+      delayNode.connect(feedbackNode);
+      feedbackNode.connect(delayNode);
+      delayNode.connect(audioCtx.destination);
+
+      gainNode.connect(audioCtx.destination);
+    }
+
+    // Modal Events
+    const loginModal = document.getElementById('loginModal');
+    document.getElementById('btnAdmin').addEventListener('click', () => {
+      loginModal.style.display = 'flex';
+    });
+
+    document.getElementById('btnSubmitPassword').addEventListener('click', () => {
+      const password = document.getElementById('adminPassword').value;
+      socket.emit('admin_login', { password });
+    });
+
+    socket.on('login_result', (data) => {
+      if (data.success) {
+        isAdmin = true;
+        loginModal.style.display = 'none';
+        mixerBoard.classList.remove('disabled');
+        roleBadge.textContent = 'Admin Mode';
+        roleBadge.classList.add('admin');
+        document.getElementById('btnAdmin').style.display = 'none';
+      } else {
+        alert(data.message);
+      }
+    });
+
+    // Network Sync
     socket.on('connect', () => {
-      status.textContent = '● Connected & Synced';
+      status.textContent = '● Connected to Server';
       status.className = 'status online';
     });
 
-    socket.on('disconnect', () => {
-      status.textContent = '● Disconnected';
-      status.className = 'status';
-    });
-
-    // Handle incoming events
     socket.on('play', (data) => {
       isRemoteChange = true;
       audio.currentTime = data.time;
@@ -66,17 +218,46 @@
       isRemoteChange = false;
     });
 
-    // Handle outgoing local user actions
+    socket.on('mixer_update', (data) => {
+      if (document.getElementById(data.id)) {
+        document.getElementById(data.id).value = data.value;
+        applyMixerSetting(data.id, data.value);
+      }
+    });
+
+    // Local Admin Action Emitters
     audio.addEventListener('play', () => {
-      if (!isRemoteChange) socket.emit('play', { time: audio.currentTime });
+      initAudioContext();
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+      if (isAdmin && !isRemoteChange) socket.emit('play', { time: audio.currentTime });
     });
 
     audio.addEventListener('pause', () => {
-      if (!isRemoteChange) socket.emit('pause', { time: audio.currentTime });
+      if (isAdmin && !isRemoteChange) socket.emit('pause', { time: audio.currentTime });
     });
 
     audio.addEventListener('seeked', () => {
-      if (!isRemoteChange) socket.emit('seek', { time: audio.currentTime });
+      if (isAdmin && !isRemoteChange) socket.emit('seek', { time: audio.currentTime });
+    });
+
+    function applyMixerSetting(id, val) {
+      if (!audioCtx) return;
+      const v = parseFloat(val);
+      if (id === 'vol1') gainNode.gain.value = v;
+      if (id === 'eqLow1') lowFilter.gain.value = v;
+      if (id === 'eqMid1') midFilter.gain.value = v;
+      if (id === 'eqHigh1') highFilter.gain.value = v;
+      if (id === 'fxDelay') delayNode.delayTime.value = v;
+      if (id === 'fxReverb') feedbackNode.gain.value = v;
+    }
+
+    document.querySelectorAll('input[type="range"]').forEach(input => {
+      input.addEventListener('input', (e) => {
+        if (!isAdmin) return;
+        initAudioContext();
+        applyMixerSetting(e.target.id, e.target.value);
+        socket.emit('mixer_update', { id: e.target.id, value: e.target.value });
+      });
     });
   </script>
 </body>
