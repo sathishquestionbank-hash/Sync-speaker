@@ -28,18 +28,17 @@
     .card { background: var(--panel); padding: 1.25rem; border-radius: 8px; border: 1px solid #334155; display: flex; flex-direction: column; gap: 0.75rem; }
     audio { width: 100%; margin-top: 0.5rem; }
 
-    /* Queue & Playlist UI */
+    /* Queue UI */
     .queue-list { list-style: none; max-height: 180px; overflow-y: auto; background: #0f172a; border: 1px solid #334155; border-radius: 6px; padding: 0.5rem; }
     .queue-item { display: flex; justify-content: space-between; align-items: center; padding: 0.5rem; font-size: 0.85rem; border-bottom: 1px solid #1e293b; }
     .queue-item.active { border-left: 3px solid var(--accent); background: #1e293b; font-weight: bold; }
-    .queue-item-title { text-overflow: ellipsis; overflow: hidden; white-space: nowrap; max-width: 200px; }
+    .queue-item-title { text-overflow: ellipsis; overflow: hidden; white-space: nowrap; max-width: 180px; }
     .item-actions { display: flex; gap: 0.3rem; }
 
-    /* Form Controls */
-    .input-group { display: flex; gap: 0.5rem; }
-    input[type="text"], input[type="url"], input[type="password"] { width: 100%; padding: 0.5rem; background: #0f172a; border: 1px solid #334155; color: white; border-radius: 4px; font-size: 0.85rem; }
+    /* Form Inputs */
+    input[type="text"], input[type="file"], input[type="password"] { width: 100%; padding: 0.5rem; background: #0f172a; border: 1px solid #334155; color: white; border-radius: 4px; font-size: 0.85rem; }
 
-    /* Mixer Board Layout */
+    /* Mixer Board */
     .mixer { width: 100%; max-width: 900px; display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1rem; }
     .channel-strip { background: #0f172a; border: 1px solid #334155; padding: 1rem; border-radius: 6px; display: flex; flex-direction: column; gap: 0.75rem; }
     .channel-title { font-size: 0.9rem; font-weight: bold; text-align: center; color: var(--accent); border-bottom: 1px solid #334155; padding-bottom: 0.5rem; }
@@ -89,13 +88,11 @@
       <h3>Song Queue</h3>
       <ul id="queueList" class="queue-list"></ul>
       
-      <!-- Admin Add Song Inputs -->
+      <!-- Admin File Upload Area -->
       <div id="adminQueueControls" class="disabled" style="display: flex; flex-direction: column; gap: 0.5rem;">
-        <input type="text" id="songTitleInput" placeholder="Song Title">
-        <div class="input-group">
-          <input type="url" id="songUrlInput" placeholder="Audio File URL (.mp3)">
-          <button id="btnAddSong" class="btn">Add</button>
-        </div>
+        <label style="font-size: 0.8rem; color: #94a3b8;">Upload Audio File (.mp3, .wav, .m4a)</label>
+        <input type="file" id="songFileInput" accept="audio/*">
+        <button id="btnAddSong" class="btn">Upload & Add to Queue</button>
       </div>
     </div>
   </div>
@@ -181,20 +178,32 @@
       } else { alert(data.message); }
     });
 
-    // Queue Interactions
+    // Handle Local File Upload Convert to Audio Data URL
     document.getElementById('btnAddSong').addEventListener('click', () => {
-      const title = document.getElementById('songTitleInput').value.trim();
-      const url = document.getElementById('songUrlInput').value.trim();
-      if (title && url) {
-        socket.emit('add_to_queue', { id: 'song-' + Date.now(), title, url });
-        document.getElementById('songTitleInput').value = '';
-        document.getElementById('songUrlInput').value = '';
+      const fileInput = document.getElementById('songFileInput');
+      const file = fileInput.files[0];
+      
+      if (!file) {
+        alert("Please select an audio file first!");
+        return;
       }
+
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const fileData = e.target.result;
+        socket.emit('add_to_queue', { 
+          id: 'song-' + Date.now(), 
+          title: file.name, 
+          url: fileData 
+        });
+        fileInput.value = '';
+      };
+      reader.readAsDataURL(file);
     });
 
     socket.on('queue_update', (data) => {
       currentPlaylist = data.playlist;
-      currentSongIdx = data.currentSongIndex;
+      currentSongIndex = data.currentSongIndex;
       renderQueue();
     });
 
@@ -246,7 +255,6 @@
     audio.addEventListener('pause', () => { if (isAdmin && !isRemoteChange) socket.emit('pause', { time: audio.currentTime }); });
     audio.addEventListener('seeked', () => { if (isAdmin && !isRemoteChange) socket.emit('seek', { time: audio.currentTime }); });
 
-    // Auto-advance track on ended
     audio.addEventListener('ended', () => {
       if (isAdmin && currentSongIdx + 1 < currentPlaylist.length) {
         selectSong(currentSongIdx + 1);
