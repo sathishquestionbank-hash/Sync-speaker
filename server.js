@@ -8,8 +8,12 @@ const server = http.createServer(app);
 
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "admin123";
 
+// Optimize Socket.IO options for instant WebSocket handshake
 const io = new Server(server, {
-  maxHttpBufferSize: 5e7, // 50 MB payload limit for MP3 uploads
+  maxHttpBufferSize: 5e7, // 50 MB
+  transports: ['websocket', 'polling'], // Prioritize WebSocket directly
+  pingTimeout: 10000,
+  pingInterval: 5000,
   cors: { origin: "*", methods: ["GET", "POST"] }
 });
 
@@ -20,7 +24,7 @@ app.get('/', (req, res) => {
 });
 
 let currentAdminId = null;
-let connectedDevices = []; // Track devices with mute states: { id, isAdmin, isMuted }
+let connectedDevices = [];
 let playlist = [
   { id: 'default-1', title: 'Default Demo Track', url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3' }
 ];
@@ -32,7 +36,7 @@ function broadcastDeviceList() {
 }
 
 io.on('connection', (socket) => {
-  console.log('Client connected:', socket.id);
+  console.log('Client connected instantly:', socket.id);
   
   connectedDevices.push({
     id: socket.id,
@@ -42,7 +46,7 @@ io.on('connection', (socket) => {
   
   broadcastDeviceList();
 
-  // Initial Sync
+  // Instant initial sync
   socket.emit('queue_update', { playlist, currentSongIndex });
   socket.emit('global_mute_state', { isMuted: isGlobalMuted });
 
@@ -59,7 +63,7 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Global Mute Toggle (All Devices)
+  // Global Mute Toggle
   socket.on('toggle_global_mute', () => {
     if (socket.id === currentAdminId) {
       isGlobalMuted = !isGlobalMuted;
@@ -68,7 +72,7 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Individual Device Mute Toggle
+  // Individual Device Mute
   socket.on('toggle_device_mute', (targetSocketId) => {
     if (socket.id === currentAdminId) {
       const targetDevice = connectedDevices.find(d => d.id === targetSocketId);
@@ -107,7 +111,7 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Transport Sync
+  // Transport Controls Sync
   socket.on('play', (data) => {
     if (socket.id === currentAdminId) socket.broadcast.emit('play', data);
   });
