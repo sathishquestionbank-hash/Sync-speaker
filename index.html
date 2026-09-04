@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Sync Speaker Studio - Admin Queue & Mixer</title>
+  <title>Sync Speaker Studio - Multi-Device Delay & Mixer</title>
   <style>
     :root {
       --bg: #0f172a;
@@ -28,24 +28,24 @@
     .card { background: var(--panel); padding: 1.25rem; border-radius: 8px; border: 1px solid #334155; display: flex; flex-direction: column; gap: 0.75rem; }
     audio { width: 100%; margin-top: 0.5rem; }
 
-    /* Queue UI */
-    .queue-list { list-style: none; max-height: 180px; overflow-y: auto; background: #0f172a; border: 1px solid #334155; border-radius: 6px; padding: 0.5rem; }
-    .queue-item { display: flex; justify-content: space-between; align-items: center; padding: 0.5rem; font-size: 0.85rem; border-bottom: 1px solid #1e293b; }
-    .queue-item.active { border-left: 3px solid var(--accent); background: #1e293b; font-weight: bold; }
-    .queue-item-title { text-overflow: ellipsis; overflow: hidden; white-space: nowrap; max-width: 180px; }
+    /* Connected Devices & Queue List UI */
+    .list-box { list-style: none; max-height: 160px; overflow-y: auto; background: #0f172a; border: 1px solid #334155; border-radius: 6px; padding: 0.5rem; }
+    .list-item { display: flex; justify-content: space-between; align-items: center; padding: 0.4rem; font-size: 0.8rem; border-bottom: 1px solid #1e293b; }
+    .list-item.active { border-left: 3px solid var(--accent); background: #1e293b; font-weight: bold; }
+    .item-title { text-overflow: ellipsis; overflow: hidden; white-space: nowrap; max-width: 180px; }
     .item-actions { display: flex; gap: 0.3rem; }
 
-    /* Form Inputs */
+    /* Input Styling */
     input[type="text"], input[type="file"], input[type="password"] { width: 100%; padding: 0.5rem; background: #0f172a; border: 1px solid #334155; color: white; border-radius: 4px; font-size: 0.85rem; }
 
-    /* Mixer Board */
-    .mixer { width: 100%; max-width: 900px; display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1rem; }
+    /* Mixer Board Layout */
+    .mixer { width: 100%; max-width: 900px; display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1rem; }
     .channel-strip { background: #0f172a; border: 1px solid #334155; padding: 1rem; border-radius: 6px; display: flex; flex-direction: column; gap: 0.75rem; }
     .channel-title { font-size: 0.9rem; font-weight: bold; text-align: center; color: var(--accent); border-bottom: 1px solid #334155; padding-bottom: 0.5rem; }
     
     .control-group { display: flex; justify-content: space-between; align-items: center; font-size: 0.8rem; }
     .control-group label { color: #94a3b8; }
-    input[type="range"] { width: 60%; }
+    input[type="range"] { width: 55%; }
     
     .btn { background: #0284c7; border: none; color: white; padding: 0.4rem 0.8rem; border-radius: 4px; cursor: pointer; font-size: 0.8rem; }
     .btn-danger { background: var(--mute); }
@@ -73,22 +73,29 @@
   </div>
 
   <div class="grid-deck">
-    <!-- Master Audio Transport -->
+    <!-- Master Deck & Active Devices -->
     <div class="card">
-      <h3>Master Deck</h3>
+      <h3>Master Transport</h3>
       <p id="nowPlayingText" style="font-size: 0.85rem; color: var(--accent);">Track: Default Demo Track</p>
       <p id="status" class="status">● Connecting...</p>
       <audio id="audioPlayer" controls crossOrigin="anonymous">
         <source id="audioSource" src="https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3" type="audio/mpeg">
       </audio>
+
+      <!-- Connected Devices UI -->
+      <div style="margin-top: 0.5rem;">
+        <h4 style="font-size: 0.85rem; margin-bottom: 0.4rem; color: #94a3b8;">
+          Connected Devices (<span id="deviceCount">0</span>)
+        </h4>
+        <ul id="deviceList" class="list-box"></ul>
+      </div>
     </div>
 
-    <!-- Playlist & Queue Control -->
+    <!-- Song Queue Section -->
     <div class="card">
       <h3>Song Queue</h3>
-      <ul id="queueList" class="queue-list"></ul>
+      <ul id="queueList" class="list-box"></ul>
       
-      <!-- Admin File Upload Area -->
       <div id="adminQueueControls" class="disabled" style="display: flex; flex-direction: column; gap: 0.5rem;">
         <label style="font-size: 0.8rem; color: #94a3b8;">Upload Audio File (.mp3, .wav, .m4a)</label>
         <input type="file" id="songFileInput" accept="audio/*">
@@ -97,25 +104,58 @@
     </div>
   </div>
 
-  <!-- Mixer Board -->
+  <!-- Mixer Board with Individual Delay Control -->
   <div id="mixerBoard" class="mixer disabled">
+    <!-- Channel 1: Ahuja Console Logic -->
     <div class="channel-strip">
       <div class="channel-title">CH 1: Ahuja Console</div>
-      <div class="control-group"><label>Gain / Vol</label><input type="range" id="vol1" min="0" max="1" step="0.01" value="0.8"></div>
-      <div class="control-group"><label>EQ Low</label><input type="range" id="eqLow1" min="-12" max="12" step="1" value="0"></div>
-      <div class="control-group"><label>EQ Mid</label><input type="range" id="eqMid1" min="-12" max="12" step="1" value="0"></div>
-      <div class="control-group"><label>EQ High</label><input type="range" id="eqHigh1" min="-12" max="12" step="1" value="0"></div>
+      
+      <div class="control-group">
+        <label>Gain / Vol</label>
+        <input type="range" id="vol1" min="0" max="1" step="0.01" value="0.8">
+      </div>
+      
+      <!-- Individual Channel Delay Control -->
+      <div class="control-group">
+        <label>Ch 1 Delay</label>
+        <input type="range" id="chDelay1" min="0" max="1" step="0.05" value="0">
+      </div>
+
+      <div class="control-group">
+        <label>EQ Low</label>
+        <input type="range" id="eqLow1" min="-12" max="12" step="1" value="0">
+      </div>
+      
+      <div class="control-group">
+        <label>EQ Mid</label>
+        <input type="range" id="eqMid1" min="-12" max="12" step="1" value="0">
+      </div>
+
+      <div class="control-group">
+        <label>EQ High</label>
+        <input type="range" id="eqHigh1" min="-12" max="12" step="1" value="0">
+      </div>
+
       <button id="mute1" class="btn-mute">MUTE</button>
     </div>
 
+    <!-- Master DSP FX Bus -->
     <div class="channel-strip">
       <div class="channel-title">DSP Master FX Bus</div>
-      <div class="control-group"><label>Delay Time</label><input type="range" id="fxDelay" min="0" max="1" step="0.05" value="0"></div>
-      <div class="control-group"><label>Reverb Feedback</label><input type="range" id="fxReverb" min="0" max="0.9" step="0.05" value="0"></div>
+      
+      <div class="control-group">
+        <label>Master Delay</label>
+        <input type="range" id="fxDelay" min="0" max="1" step="0.05" value="0">
+      </div>
+
+      <div class="control-group">
+        <label>Reverb Feedback</label>
+        <input type="range" id="fxReverb" min="0" max="0.9" step="0.05" value="0">
+      </div>
     </div>
   </div>
 
-  <!-- Admin Modal -->
+  <!-- Admin Login Modal -->
   <div id="loginModal" class="modal">
     <div class="modal-content">
       <h3 style="margin-bottom: 1rem;">Admin Authentication</h3>
@@ -133,6 +173,8 @@
     const adminQueueControls = document.getElementById('adminQueueControls');
     const roleBadge = document.getElementById('roleBadge');
     const queueList = document.getElementById('queueList');
+    const deviceList = document.getElementById('deviceList');
+    const deviceCount = document.getElementById('deviceCount');
     const nowPlayingText = document.getElementById('nowPlayingText');
 
     let isAdmin = false;
@@ -140,22 +182,44 @@
     let currentPlaylist = [];
     let currentSongIdx = 0;
 
-    let audioCtx, source, gainNode, lowFilter, midFilter, highFilter, delayNode, feedbackNode;
+    // Web Audio Nodes
+    let audioCtx, source, gainNode, chDelayNode, lowFilter, midFilter, highFilter, masterDelayNode, feedbackNode;
 
     function initAudioContext() {
       if (audioCtx) return;
       audioCtx = new (window.AudioContext || window.webkitAudioContext)();
       source = audioCtx.createMediaElementSource(audio);
+      
       gainNode = audioCtx.createGain();
 
+      // Channel 1 Specific Delay
+      chDelayNode = audioCtx.createDelay();
+      chDelayNode.delayTime.value = 0;
+
+      // Equalizer Nodes
       lowFilter = audioCtx.createBiquadFilter(); lowFilter.type = "lowshelf"; lowFilter.frequency.value = 320;
       midFilter = audioCtx.createBiquadFilter(); midFilter.type = "peaking"; midFilter.frequency.value = 1000;
       highFilter = audioCtx.createBiquadFilter(); highFilter.type = "highshelf"; highFilter.frequency.value = 3200;
 
-      delayNode = audioCtx.createDelay(); feedbackNode = audioCtx.createGain();
+      // Master FX Nodes
+      masterDelayNode = audioCtx.createDelay(); 
+      masterDelayNode.delayTime.value = 0;
+      feedbackNode = audioCtx.createGain();
+      feedbackNode.gain.value = 0;
 
-      source.connect(lowFilter); lowFilter.connect(midFilter); midFilter.connect(highFilter); highFilter.connect(gainNode);
-      gainNode.connect(delayNode); delayNode.connect(feedbackNode); feedbackNode.connect(delayNode); delayNode.connect(audioCtx.destination);
+      // Audio Graph Connection Flow
+      source.connect(chDelayNode);
+      chDelayNode.connect(lowFilter);
+      lowFilter.connect(midFilter);
+      midFilter.connect(highFilter);
+      highFilter.connect(gainNode);
+
+      // Master FX Routing
+      gainNode.connect(masterDelayNode);
+      masterDelayNode.connect(feedbackNode);
+      feedbackNode.connect(masterDelayNode);
+      masterDelayNode.connect(audioCtx.destination);
+
       gainNode.connect(audioCtx.destination);
     }
 
@@ -178,32 +242,51 @@
       } else { alert(data.message); }
     });
 
-    // Handle Local File Upload Convert to Audio Data URL
+    // Device List Updates
+    socket.on('device_list_update', (data) => {
+      deviceCount.textContent = data.total;
+      deviceList.innerHTML = '';
+      data.devices.forEach(device => {
+        const li = document.createElement('li');
+        const isSelf = device.id === socket.id;
+        li.className = `list-item ${isSelf ? 'active' : ''}`;
+        li.innerHTML = `
+          <span>ID: ${device.id.substring(0, 8)}... ${isSelf ? '(You)' : ''}</span>
+          <span>${device.isAdmin ? '👑 Admin' : '🎧 Listener'}</span>
+        `;
+        deviceList.appendChild(li);
+      });
+    });
+
+    // File Upload Handler
     document.getElementById('btnAddSong').addEventListener('click', () => {
       const fileInput = document.getElementById('songFileInput');
+      const btn = document.getElementById('btnAddSong');
       const file = fileInput.files[0];
       
-      if (!file) {
-        alert("Please select an audio file first!");
-        return;
-      }
+      if (!file) { alert("Please select an audio file first!"); return; }
+
+      btn.disabled = true;
+      btn.textContent = "Processing File...";
 
       const reader = new FileReader();
       reader.onload = (e) => {
-        const fileData = e.target.result;
-        socket.emit('add_to_queue', { 
-          id: 'song-' + Date.now(), 
-          title: file.name, 
-          url: fileData 
-        });
+        socket.emit('add_to_queue', { id: 'song-' + Date.now(), title: file.name, url: e.target.result });
         fileInput.value = '';
+        btn.disabled = false;
+        btn.textContent = "Upload & Add to Queue";
+      };
+      reader.onerror = () => {
+        alert("Error reading file");
+        btn.disabled = false;
+        btn.textContent = "Upload & Add to Queue";
       };
       reader.readAsDataURL(file);
     });
 
     socket.on('queue_update', (data) => {
       currentPlaylist = data.playlist;
-      currentSongIndex = data.currentSongIndex;
+      currentSongIdx = data.currentSongIndex;
       renderQueue();
     });
 
@@ -219,7 +302,7 @@
       queueList.innerHTML = '';
       currentPlaylist.forEach((song, idx) => {
         const li = document.createElement('li');
-        li.className = `queue-item ${idx === currentSongIdx ? 'active' : ''}`;
+        li.className = `list-item ${idx === currentSongIdx ? 'active' : ''}`;
         
         let controlsHtml = '';
         if (isAdmin) {
@@ -230,7 +313,7 @@
             </div>`;
         }
 
-        li.innerHTML = `<span class="queue-item-title">${idx + 1}. ${song.title}</span>${controlsHtml}`;
+        li.innerHTML = `<span class="item-title">${idx + 1}. ${song.title}</span>${controlsHtml}`;
         queueList.appendChild(li);
       });
     }
@@ -238,13 +321,33 @@
     window.selectSong = (index) => { socket.emit('select_song', index); };
     window.removeSong = (index) => { socket.emit('remove_from_queue', index); };
 
-    // Socket Sync Events
+    // Socket Transport Sync
     socket.on('connect', () => { status.textContent = '● Connected'; status.className = 'status online'; });
     socket.on('play', (data) => {
       isRemoteChange = true; audio.currentTime = data.time; audio.play().then(() => { isRemoteChange = false; });
     });
     socket.on('pause', (data) => { isRemoteChange = true; audio.currentTime = data.time; audio.pause(); isRemoteChange = false; });
     socket.on('seek', (data) => { isRemoteChange = true; audio.currentTime = data.time; isRemoteChange = false; });
+
+    // Mixer Sync Function
+    function applyMixerSetting(id, val) {
+      if (!audioCtx) return;
+      const v = parseFloat(val);
+      if (id === 'vol1') gainNode.gain.value = v;
+      if (id === 'chDelay1') chDelayNode.delayTime.value = v;
+      if (id === 'eqLow1') lowFilter.gain.value = v;
+      if (id === 'eqMid1') midFilter.gain.value = v;
+      if (id === 'eqHigh1') highFilter.gain.value = v;
+      if (id === 'fxDelay') masterDelayNode.delayTime.value = v;
+      if (id === 'fxReverb') feedbackNode.gain.value = v;
+    }
+
+    socket.on('mixer_update', (data) => {
+      if (document.getElementById(data.id)) {
+        document.getElementById(data.id).value = data.value;
+        applyMixerSetting(data.id, data.value);
+      }
+    });
 
     // Local Event Emitters
     audio.addEventListener('play', () => {
@@ -254,6 +357,15 @@
     });
     audio.addEventListener('pause', () => { if (isAdmin && !isRemoteChange) socket.emit('pause', { time: audio.currentTime }); });
     audio.addEventListener('seeked', () => { if (isAdmin && !isRemoteChange) socket.emit('seek', { time: audio.currentTime }); });
+
+    document.querySelectorAll('input[type="range"]').forEach(input => {
+      input.addEventListener('input', (e) => {
+        if (!isAdmin) return;
+        initAudioContext();
+        applyMixerSetting(e.target.id, e.target.value);
+        socket.emit('mixer_update', { id: e.target.id, value: e.target.value });
+      });
+    });
 
     audio.addEventListener('ended', () => {
       if (isAdmin && currentSongIdx + 1 < currentPlaylist.length) {
