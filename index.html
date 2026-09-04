@@ -1,138 +1,427 @@
-const express = require('express');
-const http = require('http');
-const { Server } = require('socket.io');
-const path = require('path');
-
-const app = express();
-const server = http.createServer(app);
-
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "admin123";
-
-const io = new Server(server, {
-  maxHttpBufferSize: 5e7, // 50 MB payload limit for MP3 uploads
-  cors: { origin: "*", methods: ["GET", "POST"] }
-});
-
-app.use(express.static(__dirname));
-
-app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'index.html'));
-});
-
-let currentAdminId = null;
-let connectedDevices = []; // Track devices with mute states: { id, isAdmin, isMuted }
-let playlist = [
-  { id: 'default-1', title: 'Default Demo Track', url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3' }
-];
-let currentSongIndex = 0;
-let isGlobalMuted = false;
-
-function broadcastDeviceList() {
-  io.emit('device_list_update', { devices: connectedDevices, total: connectedDevices.length, isGlobalMuted });
-}
-
-io.on('connection', (socket) => {
-  console.log('Client connected:', socket.id);
-  
-  connectedDevices.push({
-    id: socket.id,
-    isAdmin: false,
-    isMuted: false
-  });
-  
-  broadcastDeviceList();
-
-  // Initial Sync
-  socket.emit('queue_update', { playlist, currentSongIndex });
-  socket.emit('global_mute_state', { isMuted: isGlobalMuted });
-
-  // Admin Login
-  socket.on('admin_login', (data) => {
-    if (data.password === ADMIN_PASSWORD) {
-      currentAdminId = socket.id;
-      const dev = connectedDevices.find(d => d.id === socket.id);
-      if (dev) dev.isAdmin = true;
-      socket.emit('login_result', { success: true });
-      broadcastDeviceList();
-    } else {
-      socket.emit('login_result', { success: false, message: "Invalid Password" });
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sync Speaker Studio - Fast Sync</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --panel: #1e293b;
+      --accent: #38bdf8;
+      --text: #f8fafc;
+      --mute: #ef4444;
+      --green: #22c55e;
     }
-  });
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); padding: 1.5rem; display: flex; flex-direction: column; align-items: center; min-height: 100vh; }
+    
+    .header { width: 100%; max-width: 900px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; background: var(--panel); padding: 1rem; border-radius: 8px; border: 1px solid #334155; }
+    .status { font-size: 0.85rem; color: #94a3b8; }
+    .status.online { color: var(--green); }
+    .badge { font-size: 0.75rem; padding: 0.2rem 0.5rem; border-radius: 4px; background: #334155; margin-left: 0.5rem; }
+    .badge.admin { background: #0284c7; }
+    .badge.muted { background: var(--mute); }
+    
+    .grid-deck { width: 100%; max-width: 900px; display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.5rem; }
+    @media (max-width: 768px) { .grid-deck { grid-template-columns: 1fr; } }
 
-  // Global Mute Toggle (All Devices)
-  socket.on('toggle_global_mute', () => {
-    if (socket.id === currentAdminId) {
-      isGlobalMuted = !isGlobalMuted;
-      io.emit('global_mute_state', { isMuted: isGlobalMuted });
-      broadcastDeviceList();
+    .card { background: var(--panel); padding: 1.25rem; border-radius: 8px; border: 1px solid #334155; display: flex; flex-direction: column; gap: 0.75rem; }
+    audio { width: 100%; margin-top: 0.5rem; }
+
+    .list-box { list-style: none; max-height: 180px; overflow-y: auto; background: #0f172a; border: 1px solid #334155; border-radius: 6px; padding: 0.5rem; }
+    .list-item { display: flex; justify-content: space-between; align-items: center; padding: 0.4rem; font-size: 0.8rem; border-bottom: 1px solid #1e293b; }
+    .list-item.active { border-left: 3px solid var(--accent); background: #1e293b; font-weight: bold; }
+    .item-title { text-overflow: ellipsis; overflow: hidden; white-space: nowrap; max-width: 170px; }
+    .item-actions { display: flex; gap: 0.3rem; }
+
+    input[type="text"], input[type="file"], input[type="password"] { width: 100%; padding: 0.5rem; background: #0f172a; border: 1px solid #334155; color: white; border-radius: 4px; font-size: 0.85rem; }
+
+    .mixer { width: 100%; max-width: 900px; display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1rem; }
+    .channel-strip { background: #0f172a; border: 1px solid #334155; padding: 1rem; border-radius: 6px; display: flex; flex-direction: column; gap: 0.75rem; }
+    .channel-title { font-size: 0.9rem; font-weight: bold; text-align: center; color: var(--accent); border-bottom: 1px solid #334155; padding-bottom: 0.5rem; }
+    
+    .control-group { display: flex; justify-content: space-between; align-items: center; font-size: 0.8rem; }
+    .control-group label { color: #94a3b8; }
+    input[type="range"] { width: 55%; }
+    
+    .btn { background: #0284c7; border: none; color: white; padding: 0.4rem 0.8rem; border-radius: 4px; cursor: pointer; font-size: 0.8rem; }
+    .btn-sm { padding: 0.2rem 0.5rem; font-size: 0.75rem; }
+    .btn-danger { background: var(--mute); }
+    .btn-mute { background: #334155; border: none; color: white; padding: 0.5rem; border-radius: 4px; cursor: pointer; font-size: 0.85rem; width: 100%; font-weight: bold; }
+    .btn-mute.active { background: var(--mute); }
+
+    .disabled { opacity: 0.4; pointer-events: none; }
+
+    .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); justify-content: center; align-items: center; }
+    .modal-content { background: var(--panel); padding: 2rem; border-radius: 8px; border: 1px solid #334155; text-align: center; max-width: 320px; width: 90%; }
+  </style>
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+</head>
+<body>
+
+  <div class="header">
+    <div>
+      <h2>Sync Speaker Studio</h2>
+      <span id="roleBadge" class="badge">Listener Mode</span>
+      <span id="muteIndicator" class="badge muted" style="display: none;">MUTED</span>
+    </div>
+    <div>
+      <button id="btnAdmin" class="btn">Admin Login</button>
+    </div>
+  </div>
+
+  <div class="grid-deck">
+    <div class="card">
+      <h3>Master Transport</h3>
+      <p id="nowPlayingText" style="font-size: 0.85rem; color: var(--accent);">Track: Default Demo Track</p>
+      <p id="status" class="status">● Connecting...</p>
+      <audio id="audioPlayer" controls crossOrigin="anonymous">
+        <source id="audioSource" src="https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3" type="audio/mpeg">
+      </audio>
+
+      <div style="margin-top: 0.5rem;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.4rem;">
+          <h4 style="font-size: 0.85rem; color: #94a3b8;">
+            Connected Devices (<span id="deviceCount">0</span>)
+          </h4>
+          <button id="btnGlobalMute" class="btn btn-sm btn-danger disabled">Mute All Devices</button>
+        </div>
+        <ul id="deviceList" class="list-box"></ul>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Song Queue</h3>
+      <ul id="queueList" class="list-box"></ul>
+      
+      <div id="adminQueueControls" class="disabled" style="display: flex; flex-direction: column; gap: 0.5rem;">
+        <label style="font-size: 0.8rem; color: #94a3b8;">Upload Audio File (.mp3, .wav, .m4a)</label>
+        <input type="file" id="songFileInput" accept="audio/*">
+        <button id="btnAddSong" class="btn">Upload & Add to Queue</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="mixerBoard" class="mixer disabled">
+    <div class="channel-strip">
+      <div class="channel-title">CH 1: Master Controls</div>
+      
+      <div class="control-group">
+        <label>Gain / Vol</label>
+        <input type="range" id="vol1" min="0" max="1" step="0.01" value="0.8">
+      </div>
+      
+      <div class="control-group">
+        <label>Ch 1 Delay</label>
+        <input type="range" id="chDelay1" min="0" max="1" step="0.05" value="0">
+      </div>
+
+      <div class="control-group">
+        <label>EQ Low</label>
+        <input type="range" id="eqLow1" min="-12" max="12" step="1" value="0">
+      </div>
+      
+      <div class="control-group">
+        <label>EQ Mid</label>
+        <input type="range" id="eqMid1" min="-12" max="12" step="1" value="0">
+      </div>
+
+      <div class="control-group">
+        <label>EQ High</label>
+        <input type="range" id="eqHigh1" min="-12" max="12" step="1" value="0">
+      </div>
+
+      <button id="mute1" class="btn-mute">CHANNEL 1 MUTE</button>
+    </div>
+
+    <div class="channel-strip">
+      <div class="channel-title">DSP Master FX Bus</div>
+      
+      <div class="control-group">
+        <label>Master Delay</label>
+        <input type="range" id="fxDelay" min="0" max="1" step="0.05" value="0">
+      </div>
+
+      <div class="control-group">
+        <label>Reverb Feedback</label>
+        <input type="range" id="fxReverb" min="0" max="0.5" step="0.05" value="0">
+      </div>
+    </div>
+  </div>
+
+  <div id="loginModal" class="modal">
+    <div class="modal-content">
+      <h3 style="margin-bottom: 1rem;">Admin Authentication</h3>
+      <input type="password" id="adminPassword" placeholder="Enter password...">
+      <button id="btnSubmitPassword" class="btn" style="width: 100%; margin-top: 1rem;">Login</button>
+    </div>
+  </div>
+
+  <script>
+    // Force Socket.IO to use WebSocket transport directly (bypasses long-polling delay)
+    const socket = io(window.location.origin, {
+      transports: ['websocket', 'polling'],
+      reconnectionDelayMax: 1000
+    });
+
+    const audio = document.getElementById('audioPlayer');
+    const audioSource = document.getElementById('audioSource');
+    const status = document.getElementById('status');
+    const mixerBoard = document.getElementById('mixerBoard');
+    const adminQueueControls = document.getElementById('adminQueueControls');
+    const roleBadge = document.getElementById('roleBadge');
+    const muteIndicator = document.getElementById('muteIndicator');
+    const queueList = document.getElementById('queueList');
+    const deviceList = document.getElementById('deviceList');
+    const deviceCount = document.getElementById('deviceCount');
+    const nowPlayingText = document.getElementById('nowPlayingText');
+    const btnGlobalMute = document.getElementById('btnGlobalMute');
+
+    let isAdmin = false;
+    let isChannelMuted = false;
+    let isGlobalMuted = false;
+    let isDeviceMuted = false;
+
+    let isRemoteChange = false;
+    let currentPlaylist = [];
+    let currentSongIdx = 0;
+
+    let audioCtx, source, masterMuteGain, chGainNode, chDelayNode, lowFilter, midFilter, highFilter, masterDelayNode, feedbackGainNode;
+
+    function initAudioContext() {
+      if (audioCtx) return;
+
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      audioCtx = new AudioCtx();
+
+      source = audioCtx.createMediaElementSource(audio);
+      
+      masterMuteGain = audioCtx.createGain();
+      chGainNode = audioCtx.createGain();
+
+      chDelayNode = audioCtx.createDelay(5.0);
+      chDelayNode.delayTime.value = 0;
+
+      lowFilter = audioCtx.createBiquadFilter(); lowFilter.type = "lowshelf"; lowFilter.frequency.value = 320;
+      midFilter = audioCtx.createBiquadFilter(); midFilter.type = "peaking"; midFilter.frequency.value = 1000; midFilter.Q.value = 0.5;
+      highFilter = audioCtx.createBiquadFilter(); highFilter.type = "highshelf"; highFilter.frequency.value = 3200;
+
+      masterDelayNode = audioCtx.createDelay(5.0); masterDelayNode.delayTime.value = 0;
+      feedbackGainNode = audioCtx.createGain(); feedbackGainNode.gain.value = 0;
+
+      source.connect(chDelayNode);
+      chDelayNode.connect(lowFilter);
+      lowFilter.connect(midFilter);
+      midFilter.connect(highFilter);
+      highFilter.connect(chGainNode);
+      chGainNode.connect(masterMuteGain);
+
+      masterMuteGain.connect(audioCtx.destination);
+
+      masterMuteGain.connect(masterDelayNode);
+      masterDelayNode.connect(feedbackGainNode);
+      feedbackGainNode.connect(masterDelayNode);
+      masterDelayNode.connect(audioCtx.destination);
+
+      updateEffectiveGain();
     }
-  });
 
-  // Individual Device Mute Toggle
-  socket.on('toggle_device_mute', (targetSocketId) => {
-    if (socket.id === currentAdminId) {
-      const targetDevice = connectedDevices.find(d => d.id === targetSocketId);
-      if (targetDevice) {
-        targetDevice.isMuted = !targetDevice.isMuted;
-        io.to(targetSocketId).emit('device_mute_state', { isMuted: targetDevice.isMuted });
-        broadcastDeviceList();
+    function updateEffectiveGain() {
+      if (!audioCtx) return;
+      const shouldMute = isChannelMuted || isGlobalMuted || isDeviceMuted;
+      masterMuteGain.gain.value = shouldMute ? 0 : 1;
+      muteIndicator.style.display = shouldMute ? 'inline-block' : 'none';
+    }
+
+    document.getElementById('btnAdmin').addEventListener('click', () => { document.getElementById('loginModal').style.display = 'flex'; });
+    document.getElementById('btnSubmitPassword').addEventListener('click', () => {
+      socket.emit('admin_login', { password: document.getElementById('adminPassword').value });
+    });
+
+    socket.on('login_result', (data) => {
+      if (data.success) {
+        isAdmin = true;
+        document.getElementById('loginModal').style.display = 'none';
+        mixerBoard.classList.remove('disabled');
+        adminQueueControls.classList.remove('disabled');
+        btnGlobalMute.classList.remove('disabled');
+        roleBadge.textContent = 'Admin Mode';
+        roleBadge.classList.add('admin');
+        document.getElementById('btnAdmin').style.display = 'none';
+        renderQueue();
+      } else { alert(data.message); }
+    });
+
+    document.getElementById('mute1').addEventListener('click', () => {
+      initAudioContext();
+      isChannelMuted = !isChannelMuted;
+      const btn = document.getElementById('mute1');
+      btn.classList.toggle('active', isChannelMuted);
+      btn.textContent = isChannelMuted ? 'UNMUTE CHANNEL 1' : 'CHANNEL 1 MUTE';
+      updateEffectiveGain();
+    });
+
+    btnGlobalMute.addEventListener('click', () => {
+      if (isAdmin) socket.emit('toggle_global_mute');
+    });
+
+    socket.on('global_mute_state', (data) => {
+      isGlobalMuted = data.isMuted;
+      btnGlobalMute.textContent = isGlobalMuted ? 'Unmute All Devices' : 'Mute All Devices';
+      btnGlobalMute.classList.toggle('active', isGlobalMuted);
+      updateEffectiveGain();
+    });
+
+    socket.on('device_mute_state', (data) => {
+      isDeviceMuted = data.isMuted;
+      updateEffectiveGain();
+    });
+
+    socket.on('device_list_update', (data) => {
+      deviceCount.textContent = data.total;
+      deviceList.innerHTML = '';
+      data.devices.forEach(device => {
+        const li = document.createElement('li');
+        const isSelf = device.id === socket.id;
+        li.className = `list-item ${isSelf ? 'active' : ''}`;
+        
+        let deviceControls = '';
+        if (isAdmin && !device.isAdmin) {
+          deviceControls = `
+            <button class="btn btn-sm ${device.isMuted ? '' : 'btn-danger'}" onclick="toggleDeviceMute('${device.id}')">
+              ${device.isMuted ? 'Unmute' : 'Mute'}
+            </button>`;
+        }
+
+        li.innerHTML = `
+          <span>ID: ${device.id.substring(0, 8)}... ${isSelf ? '(You)' : ''} ${device.isMuted ? '🔇' : ''}</span>
+          <div class="item-actions">
+            <span style="margin-right: 0.3rem;">${device.isAdmin ? '👑 Admin' : '🎧 Listener'}</span>
+            ${deviceControls}
+          </div>
+        `;
+        deviceList.appendChild(li);
+      });
+    });
+
+    window.toggleDeviceMute = (targetId) => {
+      socket.emit('toggle_device_mute', targetId);
+    };
+
+    document.getElementById('btnAddSong').addEventListener('click', () => {
+      const fileInput = document.getElementById('songFileInput');
+      const btn = document.getElementById('btnAddSong');
+      const file = fileInput.files[0];
+      
+      if (!file) { alert("Please select an audio file first!"); return; }
+
+      btn.disabled = true;
+      btn.textContent = "Processing File...";
+
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        socket.emit('add_to_queue', { id: 'song-' + Date.now(), title: file.name, url: e.target.result });
+        fileInput.value = '';
+        btn.disabled = false;
+        btn.textContent = "Upload & Add to Queue";
+      };
+      reader.onerror = () => {
+        alert("Error reading file");
+        btn.disabled = false;
+        btn.textContent = "Upload & Add to Queue";
+      };
+      reader.readAsDataURL(file);
+    });
+
+    socket.on('queue_update', (data) => {
+      currentPlaylist = data.playlist;
+      currentSongIdx = data.currentSongIndex;
+      renderQueue();
+    });
+
+    socket.on('change_track', (data) => {
+      isRemoteChange = true;
+      audioSource.src = data.song.url;
+      audio.load();
+      nowPlayingText.textContent = `Track: ${data.song.title}`;
+      audio.play().then(() => { isRemoteChange = false; }).catch(() => { isRemoteChange = false; });
+    });
+
+    function renderQueue() {
+      queueList.innerHTML = '';
+      currentPlaylist.forEach((song, idx) => {
+        const li = document.createElement('li');
+        li.className = `list-item ${idx === currentSongIdx ? 'active' : ''}`;
+        
+        let controlsHtml = '';
+        if (isAdmin) {
+          controlsHtml = `
+            <div class="item-actions">
+              <button class="btn btn-sm" onclick="selectSong(${idx})">Play</button>
+              <button class="btn btn-sm btn-danger" onclick="removeSong(${idx})">✕</button>
+            </div>`;
+        }
+
+        li.innerHTML = `<span class="item-title">${idx + 1}. ${song.title}</span>${controlsHtml}`;
+        queueList.appendChild(li);
+      });
+    }
+
+    window.selectSong = (index) => { socket.emit('select_song', index); };
+    window.removeSong = (index) => { socket.emit('remove_from_queue', index); };
+
+    // Instant Connection Events
+    socket.on('connect', () => { status.textContent = '● Connected'; status.className = 'status online'; });
+    socket.on('disconnect', () => { status.textContent = '● Reconnecting...'; status.className = 'status'; });
+
+    socket.on('play', (data) => {
+      isRemoteChange = true; audio.currentTime = data.time; audio.play().then(() => { isRemoteChange = false; });
+    });
+    socket.on('pause', (data) => { isRemoteChange = true; audio.currentTime = data.time; audio.pause(); isRemoteChange = false; });
+    socket.on('seek', (data) => { isRemoteChange = true; audio.currentTime = data.time; isRemoteChange = false; });
+
+    function applyMixerSetting(id, val) {
+      if (!audioCtx) return;
+      const v = parseFloat(val);
+      if (id === 'vol1') chGainNode.gain.value = v;
+      if (id === 'chDelay1') chDelayNode.delayTime.value = v;
+      if (id === 'eqLow1') lowFilter.gain.value = v;
+      if (id === 'eqMid1') midFilter.gain.value = v;
+      if (id === 'eqHigh1') highFilter.gain.value = v;
+      if (id === 'fxDelay') masterDelayNode.delayTime.value = v;
+      if (id === 'fxReverb') feedbackGainNode.gain.value = Math.min(v, 0.5);
+    }
+
+    socket.on('mixer_update', (data) => {
+      if (document.getElementById(data.id)) {
+        document.getElementById(data.id).value = data.value;
+        applyMixerSetting(data.id, data.value);
       }
-    }
-  });
+    });
 
-  // Queue Operations
-  socket.on('add_to_queue', (song) => {
-    if (socket.id === currentAdminId) {
-      playlist.push(song);
-      io.emit('queue_update', { playlist, currentSongIndex });
-    }
-  });
+    audio.addEventListener('play', () => {
+      initAudioContext();
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+      if (isAdmin && !isRemoteChange) socket.emit('play', { time: audio.currentTime });
+    });
+    audio.addEventListener('pause', () => { if (isAdmin && !isRemoteChange) socket.emit('pause', { time: audio.currentTime }); });
+    audio.addEventListener('seeked', () => { if (isAdmin && !isRemoteChange) socket.emit('seek', { time: audio.currentTime }); });
 
-  socket.on('remove_from_queue', (index) => {
-    if (socket.id === currentAdminId && index >= 0 && index < playlist.length) {
-      playlist.splice(index, 1);
-      if (currentSongIndex >= playlist.length) {
-        currentSongIndex = Math.max(0, playlist.length - 1);
+    document.querySelectorAll('input[type="range"]').forEach(input => {
+      input.addEventListener('input', (e) => {
+        if (!isAdmin) return;
+        initAudioContext();
+        applyMixerSetting(e.target.id, e.target.value);
+        socket.emit('mixer_update', { id: e.target.id, value: e.target.value });
+      });
+    });
+
+    audio.addEventListener('ended', () => {
+      if (isAdmin && currentSongIdx + 1 < currentPlaylist.length) {
+        selectSong(currentSongIdx + 1);
       }
-      io.emit('queue_update', { playlist, currentSongIndex });
-    }
-  });
-
-  socket.on('select_song', (index) => {
-    if (socket.id === currentAdminId && index >= 0 && index < playlist.length) {
-      currentSongIndex = index;
-      const song = playlist[currentSongIndex];
-      io.emit('change_track', { song, index: currentSongIndex });
-      io.emit('queue_update', { playlist, currentSongIndex });
-    }
-  });
-
-  // Transport Sync
-  socket.on('play', (data) => {
-    if (socket.id === currentAdminId) socket.broadcast.emit('play', data);
-  });
-
-  socket.on('pause', (data) => {
-    if (socket.id === currentAdminId) socket.broadcast.emit('pause', data);
-  });
-
-  socket.on('seek', (data) => {
-    if (socket.id === currentAdminId) socket.broadcast.emit('seek', data);
-  });
-
-  socket.on('mixer_update', (data) => {
-    if (socket.id === currentAdminId) socket.broadcast.emit('mixer_update', data);
-  });
-
-  socket.on('disconnect', () => {
-    if (socket.id === currentAdminId) currentAdminId = null;
-    connectedDevices = connectedDevices.filter(d => d.id !== socket.id);
-    broadcastDeviceList();
-    console.log('Client disconnected:', socket.id);
-  });
-});
-
-const PORT = process.env.PORT || 10000;
-server.listen(PORT, '0.0.0.0', () => {
-  console.log(`Server listening on port ${PORT}`);
-});
+    });
+  </script>
+</body>
+</html>
