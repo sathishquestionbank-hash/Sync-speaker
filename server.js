@@ -40,12 +40,17 @@ io.on('connection', (socket) => {
   connectedDevices.push({
     id: socket.id,
     isAdmin: false,
-    isMuted: false
+    isMuted: false,
+    settings: {
+      delay: 0,
+      eqLow: 0,
+      eqMid: 0,
+      eqHigh: 0
+    }
   });
 
   broadcastDeviceList();
 
-  // Sync state to newly connected client
   socket.emit('queue_update', { playlist, currentSongIndex });
   socket.emit('global_mute_state', { isMuted: isGlobalMuted });
 
@@ -62,7 +67,7 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Global mute toggle (affects every client)
+  // Global Mute Toggle
   socket.on('toggle_global_mute', () => {
     if (socket.id === currentAdminId) {
       isGlobalMuted = !isGlobalMuted;
@@ -71,7 +76,7 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Individual device mute toggle
+  // Per-Device Mute Toggle
   socket.on('toggle_device_mute', (targetSocketId) => {
     if (socket.id === currentAdminId) {
       const targetDevice = connectedDevices.find(d => d.id === targetSocketId);
@@ -83,7 +88,18 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Queue operations
+  // Per-Device Audio Controls (Delay & EQ)
+  socket.on('update_device_audio_setting', (data) => {
+    if (socket.id === currentAdminId) {
+      const targetDevice = connectedDevices.find(d => d.id === data.targetId);
+      if (targetDevice) {
+        targetDevice.settings[data.param] = data.value;
+        io.to(data.targetId).emit('apply_device_audio_setting', { param: data.param, value: data.value });
+      }
+    }
+  });
+
+  // Queue Operations
   socket.on('add_to_queue', (song) => {
     if (socket.id === currentAdminId) {
       playlist.push(song);
@@ -110,7 +126,7 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Transport & Mixer sync
+  // Playback sync
   socket.on('play', (data) => { if (socket.id === currentAdminId) socket.broadcast.emit('play', data); });
   socket.on('pause', (data) => { if (socket.id === currentAdminId) socket.broadcast.emit('pause', data); });
   socket.on('seek', (data) => { if (socket.id === currentAdminId) socket.broadcast.emit('seek', data); });
@@ -123,8 +139,9 @@ io.on('connection', (socket) => {
     console.log('Client disconnected:', socket.id);
   });
 });
-// Change this at the bottom of server.js:
-const PORT = process.env.PORT || 10000;
+
+// Dynamic PORT assignment for Railway compatibility
+const PORT = process.env.PORT || 8080;
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`Server listening on port ${PORT}`);
 });
