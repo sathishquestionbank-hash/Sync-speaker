@@ -8,9 +8,8 @@ const server = http.createServer(app);
 
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "admin123";
 
-// Increase max payload limit to 50MB to handle uploaded MP3 Data URLs
 const io = new Server(server, {
-  maxHttpBufferSize: 5e7,
+  maxHttpBufferSize: 5e7, // 50 MB payload limit for MP3 uploads
   cors: { origin: "*", methods: ["GET", "POST"] }
 });
 
@@ -21,36 +20,63 @@ app.get('/', (req, res) => {
 });
 
 let currentAdminId = null;
-let connectedDevices = [];
+let connectedDevices = []; // Track devices with mute states: { id, isAdmin, isMuted }
 let playlist = [
   { id: 'default-1', title: 'Default Demo Track', url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3' }
 ];
 let currentSongIndex = 0;
+let isGlobalMuted = false;
 
 function broadcastDeviceList() {
-  const devices = connectedDevices.map(id => ({
-    id,
-    isAdmin: id === currentAdminId
-  }));
-  io.emit('device_list_update', { devices, total: devices.length });
+  io.emit('device_list_update', { devices: connectedDevices, total: connectedDevices.length, isGlobalMuted });
 }
 
 io.on('connection', (socket) => {
   console.log('Client connected:', socket.id);
-  connectedDevices.push(socket.id);
+  
+  connectedDevices.push({
+    id: socket.id,
+    isAdmin: false,
+    isMuted: false
+  });
+  
   broadcastDeviceList();
 
-  // Send initial state to newly connected client
+  // Initial Sync
   socket.emit('queue_update', { playlist, currentSongIndex });
+  socket.emit('global_mute_state', { isMuted: isGlobalMuted });
 
-  // Admin Authentication
+  // Admin Login
   socket.on('admin_login', (data) => {
     if (data.password === ADMIN_PASSWORD) {
       currentAdminId = socket.id;
+      const dev = connectedDevices.find(d => d.id === socket.id);
+      if (dev) dev.isAdmin = true;
       socket.emit('login_result', { success: true });
       broadcastDeviceList();
     } else {
       socket.emit('login_result', { success: false, message: "Invalid Password" });
+    }
+  });
+
+  // Global Mute Toggle (All Devices)
+  socket.on('toggle_global_mute', () => {
+    if (socket.id === currentAdminId) {
+      isGlobalMuted = !isGlobalMuted;
+      io.emit('global_mute_state', { isMuted: isGlobalMuted });
+      broadcastDeviceList();
+    }
+  });
+
+  // Individual Device Mute Toggle
+  socket.on('toggle_device_mute', (targetSocketId) => {
+    if (socket.id === currentAdminId) {
+      const targetDevice = connectedDevices.find(d => d.id === targetSocketId);
+      if (targetDevice) {
+        targetDevice.isMuted = !targetDevice.isMuted;
+        io.to(targetSocketId).emit('device_mute_state', { isMuted: targetDevice.isMuted });
+        broadcastDeviceList();
+      }
     }
   });
 
@@ -81,7 +107,7 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Real-Time Transport Synchronization
+  // Transport Sync
   socket.on('play', (data) => {
     if (socket.id === currentAdminId) socket.broadcast.emit('play', data);
   });
@@ -100,7 +126,7 @@ io.on('connection', (socket) => {
 
   socket.on('disconnect', () => {
     if (socket.id === currentAdminId) currentAdminId = null;
-    connectedDevices = connectedDevices.filter(id => id !== socket.id);
+    connectedDevices = connectedDevices.filter(d => d.id !== socket.id);
     broadcastDeviceList();
     console.log('Client disconnected:', socket.id);
   });
