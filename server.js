@@ -8,7 +8,9 @@ const server = http.createServer(app);
 
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "admin123";
 
+// Set max buffer size to 50MB for uploading audio files
 const io = new Server(server, {
+  maxHttpBufferSize: 5e7,
   cors: { origin: "*", methods: ["GET", "POST"] }
 });
 
@@ -19,34 +21,40 @@ app.get('/', (req, res) => {
 });
 
 let currentAdminId = null;
+let connectedDevices = [];
 let playlist = [
   { id: 'default-1', title: 'Default Demo Track', url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3' }
 ];
 let currentSongIndex = 0;
 
+function broadcastDeviceList() {
+  const devices = connectedDevices.map(id => ({
+    id,
+    isAdmin: id === currentAdminId
+  }));
+  io.emit('device_list_update', { devices, total: devices.length });
+}
+
 io.on('connection', (socket) => {
   console.log('Client connected:', socket.id);
+  connectedDevices.push(socket.id);
+  broadcastDeviceList();
 
-  // Send current queue state on connect
+  // Send initial state to newly connected client
   socket.emit('queue_update', { playlist, currentSongIndex });
 
-  // NTP Clock Sync
-  socket.on('ntp_ping', (data) => {
-    socket.emit('ntp_pong', { t0: data.t0, t1: Date.now() });
-  });
-
-  // Admin Login
+  // Admin Authentication
   socket.on('admin_login', (data) => {
     if (data.password === ADMIN_PASSWORD) {
       currentAdminId = socket.id;
       socket.emit('login_result', { success: true });
-      io.emit('admin_status', { hasAdmin: true });
+      broadcastDeviceList();
     } else {
       socket.emit('login_result', { success: false, message: "Invalid Password" });
     }
   });
 
-  // Queue Management (Admin Only)
+  // Queue Operations (Admin Only)
   socket.on('add_to_queue', (song) => {
     if (socket.id === currentAdminId) {
       playlist.push(song);
@@ -73,7 +81,7 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Transport Sync (Admin Only)
+  // Real-Time Transport Synchronization
   socket.on('play', (data) => {
     if (socket.id === currentAdminId) socket.broadcast.emit('play', data);
   });
@@ -91,15 +99,14 @@ io.on('connection', (socket) => {
   });
 
   socket.on('disconnect', () => {
-    if (socket.id === currentAdminId) {
-      currentAdminId = null;
-      io.emit('admin_status', { hasAdmin: false });
-    }
+    if (socket.id === currentAdminId) currentAdminId = null;
+    connectedDevices = connectedDevices.filter(id => id !== socket.id);
+    broadcastDeviceList();
     console.log('Client disconnected:', socket.id);
   });
 });
 
 const PORT = process.env.PORT || 10000;
 server.listen(PORT, '0.0.0.0', () => {
-  console.log(`Sync Speaker Studio server running on port ${PORT}`);
+  console.log(`Server listening on port ${PORT}`);
 });
