@@ -8,7 +8,6 @@ const server = http.createServer(app);
 
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "admin123";
 
-// Configure Socket.IO with broad CORS permissions
 const io = new Server(server, {
   maxHttpBufferSize: 5e7, // 50 MB limit for file uploads
   cors: {
@@ -17,10 +16,8 @@ const io = new Server(server, {
   }
 });
 
-// Serve static assets from the current directory
 app.use(express.static(path.join(__dirname)));
 
-// Express root route serves index.html
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
@@ -48,7 +45,7 @@ io.on('connection', (socket) => {
 
   broadcastDeviceList();
 
-  // Initial sync payload sent to newly connected device
+  // Sync state to newly connected client
   socket.emit('queue_update', { playlist, currentSongIndex });
   socket.emit('global_mute_state', { isMuted: isGlobalMuted });
 
@@ -65,7 +62,7 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Global mute toggle
+  // Global mute toggle (affects every client)
   socket.on('toggle_global_mute', () => {
     if (socket.id === currentAdminId) {
       isGlobalMuted = !isGlobalMuted;
@@ -74,7 +71,7 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Device-specific mute toggle
+  // Individual device mute toggle
   socket.on('toggle_device_mute', (targetSocketId) => {
     if (socket.id === currentAdminId) {
       const targetDevice = connectedDevices.find(d => d.id === targetSocketId);
@@ -113,22 +110,11 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Playback transport sync
-  socket.on('play', (data) => {
-    if (socket.id === currentAdminId) socket.broadcast.emit('play', data);
-  });
-
-  socket.on('pause', (data) => {
-    if (socket.id === currentAdminId) socket.broadcast.emit('pause', data);
-  });
-
-  socket.on('seek', (data) => {
-    if (socket.id === currentAdminId) socket.broadcast.emit('seek', data);
-  });
-
-  socket.on('mixer_update', (data) => {
-    if (socket.id === currentAdminId) socket.broadcast.emit('mixer_update', data);
-  });
+  // Transport & Mixer sync
+  socket.on('play', (data) => { if (socket.id === currentAdminId) socket.broadcast.emit('play', data); });
+  socket.on('pause', (data) => { if (socket.id === currentAdminId) socket.broadcast.emit('pause', data); });
+  socket.on('seek', (data) => { if (socket.id === currentAdminId) socket.broadcast.emit('seek', data); });
+  socket.on('mixer_update', (data) => { if (socket.id === currentAdminId) socket.broadcast.emit('mixer_update', data); });
 
   socket.on('disconnect', () => {
     if (socket.id === currentAdminId) currentAdminId = null;
