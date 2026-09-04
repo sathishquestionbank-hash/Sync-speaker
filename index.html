@@ -71,7 +71,7 @@
       <h2>Sync Speaker Studio</h2>
       <span id="roleBadge" class="badge">Listener Mode</span>
       <span id="muteIndicator" class="badge muted" style="display: none;">MUTED BY ADMIN</span>
-      <span id="micLiveIndicator" class="badge live" style="display: none;">MIC LIVE</span>
+      <span id="micLiveIndicator" class="badge live" style="display: none;">WEBRTC LIVE</span>
     </div>
     <div>
       <button id="btnAdmin" class="btn">Admin Login</button>
@@ -85,15 +85,20 @@
     <audio id="audioPlayer" controls crossOrigin="anonymous">
       <source id="audioSource" src="https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3" type="audio/mpeg">
     </audio>
+
+    <!-- Hidden audio tag for WebRTC stream processing -->
+    <audio id="webrtcAudio" autoplay style="display:none;"></audio>
   </div>
 
   <div class="admin-only" id="adminContainer" style="width: 100%; max-width: 650px;">
     
+    <!-- Admin Live Mic Control -->
     <div class="card">
-      <h3>Live Studio Microphone</h3>
-      <button id="btnToggleMic" class="btn btn-mic">🎤 Start Microphone Broadcast</button>
+      <h3>Live Studio Microphone (WebRTC Ultra-Low Latency)</h3>
+      <button id="btnToggleMic" class="btn btn-mic">🎤 Start WebRTC Mic Broadcast</button>
     </div>
 
+    <!-- Devices Control Center -->
     <div class="card">
       <div style="display: flex; justify-content: space-between; align-items: center;">
         <h4 style="font-size: 0.9rem; color: #94a3b8;">
@@ -104,6 +109,7 @@
       <div id="deviceList" class="list-box"></div>
     </div>
 
+    <!-- Song Queue -->
     <div class="card">
       <h3>Song Queue</h3>
       <ul id="queueList" class="list-box"></ul>
@@ -125,10 +131,19 @@
   </div>
 
   <script>
-    const socket = io();
+    const socket = io({
+      transports: ['websocket'],
+      upgrade: false,
+      reconnection: true,
+      reconnectionAttempts: Infinity,
+      reconnectionDelay: 500,
+      reconnectionDelayMax: 1000,
+      timeout: 5000
+    });
 
     const audio = document.getElementById('audioPlayer');
     const audioSource = document.getElementById('audioSource');
+    const webrtcAudio = document.getElementById('webrtcAudio');
     const status = document.getElementById('status');
     const roleBadge = document.getElementById('roleBadge');
     const muteIndicator = document.getElementById('muteIndicator');
@@ -146,12 +161,18 @@
     let isDeviceMuted = false;
     let isMicActive = false;
 
-    let mediaRecorder = null;
+    let peerConnections = {}; // Key: socketId -> RTCPeerConnection (Admin side)
+    let listenerPeerConnection = null; // Single Peer Connection (Listener side)
     let micStream = null;
+
+    const rtcConfig = {
+      iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+    };
 
     let isRemoteChange = false;
     let currentPlaylist = [];
     let currentSongIdx = 0;
+    let connectedDevicesList = [];
 
     let audioCtx, source, masterMuteGain, chDelayNode, lowFilter, midFilter, highFilter, echoDelayNode, echoFeedbackGainNode;
 
@@ -164,24 +185,20 @@
       source = audioCtx.createMediaElementSource(audio);
       masterMuteGain = audioCtx.createGain();
 
-      // Main Channel Delay & EQ Nodes
       chDelayNode = audioCtx.createDelay(5.0); chDelayNode.delayTime.value = 0;
       lowFilter = audioCtx.createBiquadFilter(); lowFilter.type = "lowshelf"; lowFilter.frequency.value = 320;
       midFilter = audioCtx.createBiquadFilter(); midFilter.type = "peaking"; midFilter.frequency.value = 1000; midFilter.Q.value = 0.5;
       highFilter = audioCtx.createBiquadFilter(); highFilter.type = "highshelf"; highFilter.frequency.value = 3200;
 
-      // Echo / Delay Effect Nodes
       echoDelayNode = audioCtx.createDelay(5.0); echoDelayNode.delayTime.value = 0;
       echoFeedbackGainNode = audioCtx.createGain(); echoFeedbackGainNode.gain.value = 0;
 
-      // Graph Pipeline Wiring
       source.connect(chDelayNode);
       chDelayNode.connect(lowFilter);
       lowFilter.connect(midFilter);
       midFilter.connect(highFilter);
       highFilter.connect(masterMuteGain);
 
-      // Echo Loop Circuit
       masterMuteGain.connect(echoDelayNode);
       echoDelayNode.connect(echoFeedbackGainNode);
       echoFeedbackGainNode.connect(echoDelayNode);
@@ -198,6 +215,7 @@
         masterMuteGain.gain.setValueAtTime(shouldMute ? 0 : 1, audioCtx.currentTime);
       }
       audio.muted = shouldMute;
+      webrtcAudio.muted = shouldMute;
       muteIndicator.style.display = shouldMute ? 'inline-block' : 'none';
     }
 
@@ -218,50 +236,111 @@
       } else { alert(data.message); }
     });
 
-    // Admin Microphone Streaming Setup
+    // --- WebRTC Logic (Admin Broadcasting) ---
     btnToggleMic.addEventListener('click', async () => {
       if (!isMicActive) {
         try {
-          micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-          mediaRecorder = new MediaRecorder(micStream);
-          
-          mediaRecorder.ondataavailable = (event) => {
-            if (event.data.size > 0) {
-              socket.emit('mic_audio_stream', event.data);
-            }
-          };
-
-          mediaRecorder.start(100); // Send 100ms chunks
+          micStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
           isMicActive = true;
-          btnToggleMic.textContent = '🛑 Stop Microphone Broadcast';
+          btnToggleMic.textContent = '🛑 Stop WebRTC Mic Broadcast';
           btnToggleMic.classList.add('active');
           micLiveIndicator.style.display = 'inline-block';
+
+          // Connect to each listener via WebRTC
+          connectedDevicesList.forEach(dev => {
+            if (dev.id !== socket.id) {
+              startWebRTCPeer(dev.id);
+            }
+          });
         } catch (err) {
-          alert('Microphone access denied or unassigned: ' + err.message);
+          alert('Microphone access denied: ' + err.message);
         }
       } else {
-        if (mediaRecorder) mediaRecorder.stop();
-        if (micStream) micStream.getTracks().forEach(track => track.stop());
-        isMicActive = false;
-        btnToggleMic.textContent = '🎤 Start Microphone Broadcast';
-        btnToggleMic.classList.remove('active');
-        micLiveIndicator.style.display = 'none';
+        stopMicBroadcasting();
       }
     });
 
-    // Listeners process live mic stream chunks
-    socket.on('receive_mic_stream', async (audioChunk) => {
-      initAudioContext();
-      const blob = new Blob([audioChunk], { type: 'audio/webm' });
-      const arrayBuffer = await blob.arrayBuffer();
-      audioCtx.decodeAudioData(arrayBuffer, (buffer) => {
-        const sourceNode = audioCtx.createBufferSource();
-        sourceNode.buffer = buffer;
-        sourceNode.connect(masterMuteGain);
-        sourceNode.start();
+    function stopMicBroadcasting() {
+      if (micStream) micStream.getTracks().forEach(track => track.stop());
+      Object.keys(peerConnections).forEach(id => {
+        peerConnections[id].close();
       });
+      peerConnections = {};
+      isMicActive = false;
+      btnToggleMic.textContent = '🎤 Start WebRTC Mic Broadcast';
+      btnToggleMic.classList.remove('active');
+      micLiveIndicator.style.display = 'none';
+      socket.emit('stop_mic_broadcast');
+    }
+
+    async function startWebRTCPeer(targetId) {
+      const pc = new RTCPeerConnection(rtcConfig);
+      peerConnections[targetId] = pc;
+
+      micStream.getTracks().forEach(track => pc.addTrack(track, micStream));
+
+      pc.onicecandidate = (event) => {
+        if (event.candidate) {
+          socket.emit('webrtc_ice_candidate', { targetId, candidate: event.candidate });
+        }
+      };
+
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      socket.emit('webrtc_offer', { targetId, sdp: offer });
+    }
+
+    // --- WebRTC Signaling Listeners ---
+    socket.on('webrtc_offer', async (data) => {
+      // Listener receives call from Admin
+      initAudioContext();
+      if (listenerPeerConnection) listenerPeerConnection.close();
+
+      listenerPeerConnection = new RTCPeerConnection(rtcConfig);
+
+      listenerPeerConnection.ontrack = (event) => {
+        webrtcAudio.srcObject = event.streams[0];
+        micLiveIndicator.style.display = 'inline-block';
+      };
+
+      listenerPeerConnection.onicecandidate = (event) => {
+        if (event.candidate) {
+          socket.emit('webrtc_ice_candidate', { targetId: data.senderId, candidate: event.candidate });
+        }
+      };
+
+      await listenerPeerConnection.setRemoteDescription(new RTCSessionDescription(data.sdp));
+      const answer = await listenerPeerConnection.createAnswer();
+      await listenerPeerConnection.setLocalDescription(answer);
+
+      socket.emit('webrtc_answer', { targetId: data.senderId, sdp: answer });
     });
 
+    socket.on('webrtc_answer', async (data) => {
+      // Admin receives answer from listener
+      const pc = peerConnections[data.senderId];
+      if (pc) {
+        await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+      }
+    });
+
+    socket.on('webrtc_ice_candidate', async (data) => {
+      const pc = isAdmin ? peerConnections[data.senderId] : listenerPeerConnection;
+      if (pc) {
+        await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+      }
+    });
+
+    socket.on('stop_webrtc_stream', () => {
+      if (listenerPeerConnection) {
+        listenerPeerConnection.close();
+        listenerPeerConnection = null;
+      }
+      webrtcAudio.srcObject = null;
+      micLiveIndicator.style.display = 'none';
+    });
+
+    // --- Device Controls & Setup ---
     btnGlobalMute.addEventListener('click', () => {
       if (isAdmin) socket.emit('toggle_global_mute');
     });
@@ -278,7 +357,6 @@
       updateEffectiveGain();
     });
 
-    // Receive individual DSP parameter updates from admin
     socket.on('apply_device_audio_setting', (data) => {
       initAudioContext();
       const val = parseFloat(data.value);
@@ -292,7 +370,9 @@
 
     socket.on('device_list_update', (data) => {
       deviceCount.textContent = data.total;
+      connectedDevicesList = data.devices;
       deviceList.innerHTML = '';
+      
       data.devices.forEach(device => {
         const isSelf = device.id === socket.id;
         const div = document.createElement('div');
@@ -302,30 +382,12 @@
         if (isAdmin && !device.isAdmin) {
           controlsHtml = `
             <div class="device-controls">
-              <div class="control-group">
-                <label>Delay</label>
-                <input type="range" min="0" max="2" step="0.05" value="${device.settings.delay}" onchange="updateDeviceAudio('${device.id}', 'delay', this.value)">
-              </div>
-              <div class="control-group">
-                <label>EQ Low</label>
-                <input type="range" min="-12" max="12" step="1" value="${device.settings.eqLow}" onchange="updateDeviceAudio('${device.id}', 'eqLow', this.value)">
-              </div>
-              <div class="control-group">
-                <label>EQ Mid</label>
-                <input type="range" min="-12" max="12" step="1" value="${device.settings.eqMid}" onchange="updateDeviceAudio('${device.id}', 'eqMid', this.value)">
-              </div>
-              <div class="control-group">
-                <label>EQ High</label>
-                <input type="range" min="-12" max="12" step="1" value="${device.settings.eqHigh}" onchange="updateDeviceAudio('${device.id}', 'eqHigh', this.value)">
-              </div>
-              <div class="control-group">
-                <label>Echo Time</label>
-                <input type="range" min="0" max="1" step="0.05" value="${device.settings.echoTime}" onchange="updateDeviceAudio('${device.id}', 'echoTime', this.value)">
-              </div>
-              <div class="control-group">
-                <label>Echo Repeat</label>
-                <input type="range" min="0" max="0.8" step="0.05" value="${device.settings.echoFeedback}" onchange="updateDeviceAudio('${device.id}', 'echoFeedback', this.value)">
-              </div>
+              <div class="control-group"><label>Delay</label><input type="range" min="0" max="2" step="0.05" value="${device.settings.delay}" onchange="updateDeviceAudio('${device.id}', 'delay', this.value)"></div>
+              <div class="control-group"><label>EQ Low</label><input type="range" min="-12" max="12" step="1" value="${device.settings.eqLow}" onchange="updateDeviceAudio('${device.id}', 'eqLow', this.value)"></div>
+              <div class="control-group"><label>EQ Mid</label><input type="range" min="-12" max="12" step="1" value="${device.settings.eqMid}" onchange="updateDeviceAudio('${device.id}', 'eqMid', this.value)"></div>
+              <div class="control-group"><label>EQ High</label><input type="range" min="-12" max="12" step="1" value="${device.settings.eqHigh}" onchange="updateDeviceAudio('${device.id}', 'eqHigh', this.value)"></div>
+              <div class="control-group"><label>Echo Time</label><input type="range" min="0" max="1" step="0.05" value="${device.settings.echoTime}" onchange="updateDeviceAudio('${device.id}', 'echoTime', this.value)"></div>
+              <div class="control-group"><label>Echo Repeat</label><input type="range" min="0" max="0.8" step="0.05" value="${device.settings.echoFeedback}" onchange="updateDeviceAudio('${device.id}', 'echoFeedback', this.value)"></div>
             </div>`;
         }
 
@@ -344,9 +406,7 @@
     });
 
     window.toggleDeviceMute = (targetId) => { socket.emit('toggle_device_mute', targetId); };
-    window.updateDeviceAudio = (targetId, param, value) => {
-      socket.emit('update_device_audio_setting', { targetId, param, value });
-    };
+    window.updateDeviceAudio = (targetId, param, value) => { socket.emit('update_device_audio_setting', { targetId, param, value }); };
 
     document.getElementById('btnAddSong').addEventListener('click', () => {
       const fileInput = document.getElementById('songFileInput');
@@ -364,9 +424,7 @@
       reader.readAsDataURL(file);
     });
 
-    socket.on('queue_update', (data) => {
-      currentPlaylist = data.playlist; currentSongIdx = data.currentSongIndex; renderQueue();
-    });
+    socket.on('queue_update', (data) => { currentPlaylist = data.playlist; currentSongIdx = data.currentSongIndex; renderQueue(); });
 
     socket.on('change_track', (data) => {
       isRemoteChange = true; audioSource.src = data.song.url; audio.load();
