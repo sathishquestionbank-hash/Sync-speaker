@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Sync Speaker Studio - Fast Sync</title>
+  <title>Sync Speaker Studio</title>
   <style>
     :root {
       --bg: #0f172a;
@@ -56,7 +56,9 @@
     .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); justify-content: center; align-items: center; }
     .modal-content { background: var(--panel); padding: 2rem; border-radius: 8px; border: 1px solid #334155; text-align: center; max-width: 320px; width: 90%; }
   </style>
-  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+
+  <!-- Load Socket.IO from the local Express endpoint -->
+  <script src="/socket.io/socket.io.js"></script>
 </head>
 <body>
 
@@ -159,11 +161,8 @@
   </div>
 
   <script>
-    // Force Socket.IO to use WebSocket transport directly (bypasses long-polling delay)
-    const socket = io(window.location.origin, {
-      transports: ['websocket', 'polling'],
-      reconnectionDelayMax: 1000
-    });
+    // Initialize Socket.IO directly relative to current host
+    const socket = io();
 
     const audio = document.getElementById('audioPlayer');
     const audioSource = document.getElementById('audioSource');
@@ -371,9 +370,16 @@
     window.selectSong = (index) => { socket.emit('select_song', index); };
     window.removeSong = (index) => { socket.emit('remove_from_queue', index); };
 
-    // Instant Connection Events
-    socket.on('connect', () => { status.textContent = '● Connected'; status.className = 'status online'; });
-    socket.on('disconnect', () => { status.textContent = '● Reconnecting...'; status.className = 'status'; });
+    // Connection state listeners
+    socket.on('connect', () => {
+      status.textContent = '● Connected';
+      status.className = 'status online';
+    });
+
+    socket.on('disconnect', () => {
+      status.textContent = '● Reconnecting...';
+      status.className = 'status';
+    });
 
     socket.on('play', (data) => {
       isRemoteChange = true; audio.currentTime = data.time; audio.play().then(() => { isRemoteChange = false; });
