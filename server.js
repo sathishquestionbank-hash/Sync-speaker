@@ -8,21 +8,23 @@ const server = http.createServer(app);
 
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "admin123";
 
-// Optimize Socket.IO options for instant WebSocket handshake
 const io = new Server(server, {
-  maxHttpBufferSize: 5e7, // 50 MB
-  transports: ['websocket', 'polling'], // Prioritize WebSocket directly
+  maxHttpBufferSize: 5e7,
+  transports: ['websocket', 'polling'],
   pingTimeout: 10000,
   pingInterval: 5000,
   cors: { origin: "*", methods: ["GET", "POST"] }
 });
 
-app.use(express.static(__dirname));
+// Serve static static files from the root directory
+app.use(express.static(path.join(__dirname)));
 
+// Explicitly send index.html on root request
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
 
+// Rest of your socket logic ...
 let currentAdminId = null;
 let connectedDevices = [];
 let playlist = [
@@ -36,21 +38,12 @@ function broadcastDeviceList() {
 }
 
 io.on('connection', (socket) => {
-  console.log('Client connected instantly:', socket.id);
-  
-  connectedDevices.push({
-    id: socket.id,
-    isAdmin: false,
-    isMuted: false
-  });
-  
+  connectedDevices.push({ id: socket.id, isAdmin: false, isMuted: false });
   broadcastDeviceList();
 
-  // Instant initial sync
   socket.emit('queue_update', { playlist, currentSongIndex });
   socket.emit('global_mute_state', { isMuted: isGlobalMuted });
 
-  // Admin Login
   socket.on('admin_login', (data) => {
     if (data.password === ADMIN_PASSWORD) {
       currentAdminId = socket.id;
@@ -63,7 +56,6 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Global Mute Toggle
   socket.on('toggle_global_mute', () => {
     if (socket.id === currentAdminId) {
       isGlobalMuted = !isGlobalMuted;
@@ -72,7 +64,6 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Individual Device Mute
   socket.on('toggle_device_mute', (targetSocketId) => {
     if (socket.id === currentAdminId) {
       const targetDevice = connectedDevices.find(d => d.id === targetSocketId);
@@ -84,7 +75,6 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Queue Operations
   socket.on('add_to_queue', (song) => {
     if (socket.id === currentAdminId) {
       playlist.push(song);
@@ -111,28 +101,15 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Transport Controls Sync
-  socket.on('play', (data) => {
-    if (socket.id === currentAdminId) socket.broadcast.emit('play', data);
-  });
-
-  socket.on('pause', (data) => {
-    if (socket.id === currentAdminId) socket.broadcast.emit('pause', data);
-  });
-
-  socket.on('seek', (data) => {
-    if (socket.id === currentAdminId) socket.broadcast.emit('seek', data);
-  });
-
-  socket.on('mixer_update', (data) => {
-    if (socket.id === currentAdminId) socket.broadcast.emit('mixer_update', data);
-  });
+  socket.on('play', (data) => { if (socket.id === currentAdminId) socket.broadcast.emit('play', data); });
+  socket.on('pause', (data) => { if (socket.id === currentAdminId) socket.broadcast.emit('pause', data); });
+  socket.on('seek', (data) => { if (socket.id === currentAdminId) socket.broadcast.emit('seek', data); });
+  socket.on('mixer_update', (data) => { if (socket.id === currentAdminId) socket.broadcast.emit('mixer_update', data); });
 
   socket.on('disconnect', () => {
     if (socket.id === currentAdminId) currentAdminId = null;
     connectedDevices = connectedDevices.filter(d => d.id !== socket.id);
     broadcastDeviceList();
-    console.log('Client disconnected:', socket.id);
   });
 });
 
