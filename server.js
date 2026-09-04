@@ -123,7 +123,7 @@ io.on('connection', (socket) => {
     console.log('Client disconnected:', socket.id);
   });
 });
-
+// Change this at the bottom of server.js:
 const PORT = process.env.PORT || 10000;
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`Server listening on port ${PORT}`);
