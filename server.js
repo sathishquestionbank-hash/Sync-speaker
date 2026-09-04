@@ -9,7 +9,7 @@ const server = http.createServer(app);
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "admin123";
 
 const io = new Server(server, {
-  maxHttpBufferSize: 5e7, // 50 MB limit for file uploads
+  maxHttpBufferSize: 5e7, // 50 MB limit for audio uploads
   cors: {
     origin: "*",
     methods: ["GET", "POST"]
@@ -45,7 +45,9 @@ io.on('connection', (socket) => {
       delay: 0,
       eqLow: 0,
       eqMid: 0,
-      eqHigh: 0
+      eqHigh: 0,
+      echoTime: 0,
+      echoFeedback: 0
     }
   });
 
@@ -88,7 +90,7 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Per-Device Audio Controls (Delay & EQ)
+  // Per-Device Audio Controls
   socket.on('update_device_audio_setting', (data) => {
     if (socket.id === currentAdminId) {
       const targetDevice = connectedDevices.find(d => d.id === data.targetId);
@@ -96,6 +98,13 @@ io.on('connection', (socket) => {
         targetDevice.settings[data.param] = data.value;
         io.to(data.targetId).emit('apply_device_audio_setting', { param: data.param, value: data.value });
       }
+    }
+  });
+
+  // Live Mic Audio Stream Broadcast
+  socket.on('mic_audio_stream', (audioChunk) => {
+    if (socket.id === currentAdminId) {
+      socket.broadcast.emit('receive_mic_stream', audioChunk);
     }
   });
 
@@ -130,7 +139,6 @@ io.on('connection', (socket) => {
   socket.on('play', (data) => { if (socket.id === currentAdminId) socket.broadcast.emit('play', data); });
   socket.on('pause', (data) => { if (socket.id === currentAdminId) socket.broadcast.emit('pause', data); });
   socket.on('seek', (data) => { if (socket.id === currentAdminId) socket.broadcast.emit('seek', data); });
-  socket.on('mixer_update', (data) => { if (socket.id === currentAdminId) socket.broadcast.emit('mixer_update', data); });
 
   socket.on('disconnect', () => {
     if (socket.id === currentAdminId) currentAdminId = null;
