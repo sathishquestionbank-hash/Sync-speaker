@@ -12,6 +12,7 @@
       --text: #f8fafc;
       --mute: #ef4444;
       --green: #22c55e;
+      --mic: #a855f7;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); padding: 1.5rem; display: flex; flex-direction: column; align-items: center; min-height: 100vh; }
@@ -22,6 +23,7 @@
     .badge { font-size: 0.75rem; padding: 0.2rem 0.5rem; border-radius: 4px; background: #334155; margin-left: 0.5rem; }
     .badge.admin { background: #0284c7; }
     .badge.muted { background: var(--mute); }
+    .badge.live { background: var(--mic); }
     
     .card { width: 100%; max-width: 650px; background: var(--panel); padding: 1.5rem; border-radius: 8px; border: 1px solid #334155; display: flex; flex-direction: column; gap: 1rem; margin-bottom: 1rem; }
     audio { width: 100%; margin-top: 0.5rem; }
@@ -38,10 +40,6 @@
 
     input[type="text"], input[type="file"], input[type="password"] { width: 100%; padding: 0.5rem; background: #0f172a; border: 1px solid #334155; color: white; border-radius: 4px; font-size: 0.85rem; }
 
-    .mixer { width: 100%; max-width: 650px; display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1rem; margin-top: 1rem; }
-    .channel-strip { background: #0f172a; border: 1px solid #334155; padding: 1rem; border-radius: 6px; display: flex; flex-direction: column; gap: 0.75rem; }
-    .channel-title { font-size: 0.9rem; font-weight: bold; text-align: center; color: var(--accent); border-bottom: 1px solid #334155; padding-bottom: 0.5rem; }
-    
     .control-group { display: flex; justify-content: space-between; align-items: center; font-size: 0.75rem; }
     .control-group label { color: #94a3b8; }
     input[type="range"] { width: 55%; }
@@ -49,6 +47,14 @@
     .btn { background: #0284c7; border: none; color: white; padding: 0.4rem 0.8rem; border-radius: 4px; cursor: pointer; font-size: 0.8rem; }
     .btn-sm { padding: 0.2rem 0.5rem; font-size: 0.75rem; }
     .btn-danger { background: var(--mute); }
+    .btn-mic { background: var(--mic); font-weight: bold; }
+    .btn-mic.active { background: #7e22ce; animation: pulse 1.5s infinite; }
+
+    @keyframes pulse {
+      0% { opacity: 1; }
+      50% { opacity: 0.6; }
+      100% { opacity: 1; }
+    }
 
     .admin-only { display: none; }
 
@@ -65,6 +71,7 @@
       <h2>Sync Speaker Studio</h2>
       <span id="roleBadge" class="badge">Listener Mode</span>
       <span id="muteIndicator" class="badge muted" style="display: none;">MUTED BY ADMIN</span>
+      <span id="micLiveIndicator" class="badge live" style="display: none;">MIC LIVE</span>
     </div>
     <div>
       <button id="btnAdmin" class="btn">Admin Login</button>
@@ -82,7 +89,11 @@
 
   <div class="admin-only" id="adminContainer" style="width: 100%; max-width: 650px;">
     
-    <!-- Devices Control Center -->
+    <div class="card">
+      <h3>Live Studio Microphone</h3>
+      <button id="btnToggleMic" class="btn btn-mic">🎤 Start Microphone Broadcast</button>
+    </div>
+
     <div class="card">
       <div style="display: flex; justify-content: space-between; align-items: center;">
         <h4 style="font-size: 0.9rem; color: #94a3b8;">
@@ -93,7 +104,6 @@
       <div id="deviceList" class="list-box"></div>
     </div>
 
-    <!-- Song Queue -->
     <div class="card">
       <h3>Song Queue</h3>
       <ul id="queueList" class="list-box"></ul>
@@ -122,22 +132,28 @@
     const status = document.getElementById('status');
     const roleBadge = document.getElementById('roleBadge');
     const muteIndicator = document.getElementById('muteIndicator');
+    const micLiveIndicator = document.getElementById('micLiveIndicator');
     const adminContainer = document.getElementById('adminContainer');
     const queueList = document.getElementById('queueList');
     const deviceList = document.getElementById('deviceList');
     const deviceCount = document.getElementById('deviceCount');
     const nowPlayingText = document.getElementById('nowPlayingText');
     const btnGlobalMute = document.getElementById('btnGlobalMute');
+    const btnToggleMic = document.getElementById('btnToggleMic');
 
     let isAdmin = false;
     let isGlobalMuted = false;
     let isDeviceMuted = false;
+    let isMicActive = false;
+
+    let mediaRecorder = null;
+    let micStream = null;
 
     let isRemoteChange = false;
     let currentPlaylist = [];
     let currentSongIdx = 0;
 
-    let audioCtx, source, masterMuteGain, chDelayNode, lowFilter, midFilter, highFilter;
+    let audioCtx, source, masterMuteGain, chDelayNode, lowFilter, midFilter, highFilter, echoDelayNode, echoFeedbackGainNode;
 
     function initAudioContext() {
       if (audioCtx) return;
@@ -148,17 +164,28 @@
       source = audioCtx.createMediaElementSource(audio);
       masterMuteGain = audioCtx.createGain();
 
+      // Main Channel Delay & EQ Nodes
       chDelayNode = audioCtx.createDelay(5.0); chDelayNode.delayTime.value = 0;
-
       lowFilter = audioCtx.createBiquadFilter(); lowFilter.type = "lowshelf"; lowFilter.frequency.value = 320;
       midFilter = audioCtx.createBiquadFilter(); midFilter.type = "peaking"; midFilter.frequency.value = 1000; midFilter.Q.value = 0.5;
       highFilter = audioCtx.createBiquadFilter(); highFilter.type = "highshelf"; highFilter.frequency.value = 3200;
 
+      // Echo / Delay Effect Nodes
+      echoDelayNode = audioCtx.createDelay(5.0); echoDelayNode.delayTime.value = 0;
+      echoFeedbackGainNode = audioCtx.createGain(); echoFeedbackGainNode.gain.value = 0;
+
+      // Graph Pipeline Wiring
       source.connect(chDelayNode);
       chDelayNode.connect(lowFilter);
       lowFilter.connect(midFilter);
       midFilter.connect(highFilter);
       highFilter.connect(masterMuteGain);
+
+      // Echo Loop Circuit
+      masterMuteGain.connect(echoDelayNode);
+      echoDelayNode.connect(echoFeedbackGainNode);
+      echoFeedbackGainNode.connect(echoDelayNode);
+      echoDelayNode.connect(audioCtx.destination);
 
       masterMuteGain.connect(audioCtx.destination);
 
@@ -191,6 +218,50 @@
       } else { alert(data.message); }
     });
 
+    // Admin Microphone Streaming Setup
+    btnToggleMic.addEventListener('click', async () => {
+      if (!isMicActive) {
+        try {
+          micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          mediaRecorder = new MediaRecorder(micStream);
+          
+          mediaRecorder.ondataavailable = (event) => {
+            if (event.data.size > 0) {
+              socket.emit('mic_audio_stream', event.data);
+            }
+          };
+
+          mediaRecorder.start(100); // Send 100ms chunks
+          isMicActive = true;
+          btnToggleMic.textContent = '🛑 Stop Microphone Broadcast';
+          btnToggleMic.classList.add('active');
+          micLiveIndicator.style.display = 'inline-block';
+        } catch (err) {
+          alert('Microphone access denied or unassigned: ' + err.message);
+        }
+      } else {
+        if (mediaRecorder) mediaRecorder.stop();
+        if (micStream) micStream.getTracks().forEach(track => track.stop());
+        isMicActive = false;
+        btnToggleMic.textContent = '🎤 Start Microphone Broadcast';
+        btnToggleMic.classList.remove('active');
+        micLiveIndicator.style.display = 'none';
+      }
+    });
+
+    // Listeners process live mic stream chunks
+    socket.on('receive_mic_stream', async (audioChunk) => {
+      initAudioContext();
+      const blob = new Blob([audioChunk], { type: 'audio/webm' });
+      const arrayBuffer = await blob.arrayBuffer();
+      audioCtx.decodeAudioData(arrayBuffer, (buffer) => {
+        const sourceNode = audioCtx.createBufferSource();
+        sourceNode.buffer = buffer;
+        sourceNode.connect(masterMuteGain);
+        sourceNode.start();
+      });
+    });
+
     btnGlobalMute.addEventListener('click', () => {
       if (isAdmin) socket.emit('toggle_global_mute');
     });
@@ -215,6 +286,8 @@
       if (data.param === 'eqLow' && lowFilter) lowFilter.gain.value = val;
       if (data.param === 'eqMid' && midFilter) midFilter.gain.value = val;
       if (data.param === 'eqHigh' && highFilter) highFilter.gain.value = val;
+      if (data.param === 'echoTime' && echoDelayNode) echoDelayNode.delayTime.value = val;
+      if (data.param === 'echoFeedback' && echoFeedbackGainNode) echoFeedbackGainNode.gain.value = Math.min(val, 0.85);
     });
 
     socket.on('device_list_update', (data) => {
@@ -244,6 +317,14 @@
               <div class="control-group">
                 <label>EQ High</label>
                 <input type="range" min="-12" max="12" step="1" value="${device.settings.eqHigh}" onchange="updateDeviceAudio('${device.id}', 'eqHigh', this.value)">
+              </div>
+              <div class="control-group">
+                <label>Echo Time</label>
+                <input type="range" min="0" max="1" step="0.05" value="${device.settings.echoTime}" onchange="updateDeviceAudio('${device.id}', 'echoTime', this.value)">
+              </div>
+              <div class="control-group">
+                <label>Echo Repeat</label>
+                <input type="range" min="0" max="0.8" step="0.05" value="${device.settings.echoFeedback}" onchange="updateDeviceAudio('${device.id}', 'echoFeedback', this.value)">
               </div>
             </div>`;
         }
