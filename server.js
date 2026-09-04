@@ -8,7 +8,7 @@ const server = http.createServer(app);
 
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "admin123";
 
-// Set max buffer size to 50MB for uploading audio files
+// Increase max payload limit to 50MB to handle uploaded MP3 Data URLs
 const io = new Server(server, {
   maxHttpBufferSize: 5e7,
   cors: { origin: "*", methods: ["GET", "POST"] }
@@ -54,7 +54,7 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Queue Operations (Admin Only)
+  // Queue Operations
   socket.on('add_to_queue', (song) => {
     if (socket.id === currentAdminId) {
       playlist.push(song);
