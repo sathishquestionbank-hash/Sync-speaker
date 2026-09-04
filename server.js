@@ -6,7 +6,6 @@ const path = require('path');
 const app = express();
 const server = http.createServer(app);
 
-// Disable Nagle's algorithm for instant socket packet delivery
 server.on('connection', (socket) => {
   socket.setNoDelay(true);
 });
@@ -14,8 +13,6 @@ server.on('connection', (socket) => {
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "admin123";
 
 const io = new Server(server, {
-  maxHttpBufferSize: 5e7,
-  // Force WebSockets directly to bypass HTTP long-polling delay
   transports: ['websocket'],
   pingTimeout: 10000,
   pingInterval: 5000,
@@ -68,6 +65,38 @@ io.on('connection', (socket) => {
     }
   });
 
+  // --- WebRTC Signaling Channels for Ultra-Low Latency Audio ---
+  socket.on('webrtc_offer', (data) => {
+    // Route WebRTC Offer from Admin to target listener
+    io.to(data.targetId).emit('webrtc_offer', {
+      sdp: data.sdp,
+      senderId: socket.id
+    });
+  });
+
+  socket.on('webrtc_answer', (data) => {
+    // Route WebRTC Answer from listener back to Admin
+    io.to(data.targetId).emit('webrtc_answer', {
+      sdp: data.sdp,
+      senderId: socket.id
+    });
+  });
+
+  socket.on('webrtc_ice_candidate', (data) => {
+    // Exchange ICE candidates for NAT traversal
+    io.to(data.targetId).emit('webrtc_ice_candidate', {
+      candidate: data.candidate,
+      senderId: socket.id
+    });
+  });
+
+  socket.on('stop_mic_broadcast', () => {
+    if (socket.id === currentAdminId) {
+      socket.broadcast.emit('stop_webrtc_stream');
+    }
+  });
+
+  // --- Controls & Playback ---
   socket.on('toggle_global_mute', () => {
     if (socket.id === currentAdminId) {
       isGlobalMuted = !isGlobalMuted;
@@ -94,12 +123,6 @@ io.on('connection', (socket) => {
         targetDevice.settings[data.param] = data.value;
         io.to(data.targetId).emit('apply_device_audio_setting', { param: data.param, value: data.value });
       }
-    }
-  });
-
-  socket.on('mic_audio_stream', (audioChunk) => {
-    if (socket.id === currentAdminId) {
-      socket.broadcast.emit('receive_mic_stream', audioChunk);
     }
   });
 
@@ -134,7 +157,10 @@ io.on('connection', (socket) => {
   socket.on('seek', (data) => { if (socket.id === currentAdminId) socket.broadcast.emit('seek', data); });
 
   socket.on('disconnect', () => {
-    if (socket.id === currentAdminId) currentAdminId = null;
+    if (socket.id === currentAdminId) {
+      currentAdminId = null;
+      socket.broadcast.emit('stop_webrtc_stream');
+    }
     connectedDevices = connectedDevices.filter(d => d.id !== socket.id);
     broadcastDeviceList();
   });
