@@ -16,17 +16,21 @@
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); padding: 1.5rem; display: flex; flex-direction: column; align-items: center; min-height: 100vh; }
     
-    .header { width: 100%; max-width: 600px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; background: var(--panel); padding: 1rem; border-radius: 8px; border: 1px solid #334155; }
+    .header { width: 100%; max-width: 650px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; background: var(--panel); padding: 1rem; border-radius: 8px; border: 1px solid #334155; }
     .status { font-size: 0.85rem; color: #94a3b8; }
     .status.online { color: var(--green); }
     .badge { font-size: 0.75rem; padding: 0.2rem 0.5rem; border-radius: 4px; background: #334155; margin-left: 0.5rem; }
     .badge.admin { background: #0284c7; }
     .badge.muted { background: var(--mute); }
     
-    .card { width: 100%; max-width: 600px; background: var(--panel); padding: 1.5rem; border-radius: 8px; border: 1px solid #334155; display: flex; flex-direction: column; gap: 1rem; margin-bottom: 1rem; }
+    .card { width: 100%; max-width: 650px; background: var(--panel); padding: 1.5rem; border-radius: 8px; border: 1px solid #334155; display: flex; flex-direction: column; gap: 1rem; margin-bottom: 1rem; }
     audio { width: 100%; margin-top: 0.5rem; }
 
-    .list-box { list-style: none; max-height: 180px; overflow-y: auto; background: #0f172a; border: 1px solid #334155; border-radius: 6px; padding: 0.5rem; }
+    .list-box { list-style: none; max-height: 350px; overflow-y: auto; background: #0f172a; border: 1px solid #334155; border-radius: 6px; padding: 0.5rem; }
+    .device-card { background: #1e293b; border: 1px solid #334155; border-radius: 6px; padding: 0.75rem; margin-bottom: 0.5rem; display: flex; flex-direction: column; gap: 0.5rem; }
+    .device-header { display: flex; justify-content: space-between; align-items: center; font-size: 0.85rem; font-weight: bold; }
+    .device-controls { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; padding-top: 0.5rem; border-top: 1px solid #334155; }
+    
     .list-item { display: flex; justify-content: space-between; align-items: center; padding: 0.4rem; font-size: 0.8rem; border-bottom: 1px solid #1e293b; }
     .list-item.active { border-left: 3px solid var(--accent); background: #1e293b; font-weight: bold; }
     .item-title { text-overflow: ellipsis; overflow: hidden; white-space: nowrap; max-width: 200px; }
@@ -34,21 +38,18 @@
 
     input[type="text"], input[type="file"], input[type="password"] { width: 100%; padding: 0.5rem; background: #0f172a; border: 1px solid #334155; color: white; border-radius: 4px; font-size: 0.85rem; }
 
-    .mixer { width: 100%; max-width: 600px; display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1rem; margin-top: 1rem; }
+    .mixer { width: 100%; max-width: 650px; display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1rem; margin-top: 1rem; }
     .channel-strip { background: #0f172a; border: 1px solid #334155; padding: 1rem; border-radius: 6px; display: flex; flex-direction: column; gap: 0.75rem; }
     .channel-title { font-size: 0.9rem; font-weight: bold; text-align: center; color: var(--accent); border-bottom: 1px solid #334155; padding-bottom: 0.5rem; }
     
-    .control-group { display: flex; justify-content: space-between; align-items: center; font-size: 0.8rem; }
+    .control-group { display: flex; justify-content: space-between; align-items: center; font-size: 0.75rem; }
     .control-group label { color: #94a3b8; }
     input[type="range"] { width: 55%; }
     
     .btn { background: #0284c7; border: none; color: white; padding: 0.4rem 0.8rem; border-radius: 4px; cursor: pointer; font-size: 0.8rem; }
     .btn-sm { padding: 0.2rem 0.5rem; font-size: 0.75rem; }
     .btn-danger { background: var(--mute); }
-    .btn-mute { background: #334155; border: none; color: white; padding: 0.5rem; border-radius: 4px; cursor: pointer; font-size: 0.85rem; width: 100%; font-weight: bold; }
-    .btn-mute.active { background: var(--mute); }
 
-    /* Admin-only container (hidden by default for listeners) */
     .admin-only { display: none; }
 
     .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); justify-content: center; align-items: center; }
@@ -70,21 +71,18 @@
     </div>
   </div>
 
-  <!-- Player Card (Visible to Everyone) -->
   <div class="card">
     <p id="nowPlayingText" style="font-size: 0.9rem; color: var(--accent); font-weight: bold;">Track: Default Demo Track</p>
     <p id="status" class="status">● Connecting...</p>
     
-    <!-- Audio element for playing/pausing -->
     <audio id="audioPlayer" controls crossOrigin="anonymous">
       <source id="audioSource" src="https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3" type="audio/mpeg">
     </audio>
   </div>
 
-  <!-- Admin Control Panels (Hidden for Listeners) -->
-  <div class="admin-only" id="adminContainer" style="width: 100%; max-width: 600px;">
+  <div class="admin-only" id="adminContainer" style="width: 100%; max-width: 650px;">
     
-    <!-- Device List & Mute Controls -->
+    <!-- Devices Control Center -->
     <div class="card">
       <div style="display: flex; justify-content: space-between; align-items: center;">
         <h4 style="font-size: 0.9rem; color: #94a3b8;">
@@ -92,10 +90,10 @@
         </h4>
         <button id="btnGlobalMute" class="btn btn-sm btn-danger">Mute All Devices</button>
       </div>
-      <ul id="deviceList" class="list-box"></ul>
+      <div id="deviceList" class="list-box"></div>
     </div>
 
-    <!-- Song Queue & Uploads -->
+    <!-- Song Queue -->
     <div class="card">
       <h3>Song Queue</h3>
       <ul id="queueList" class="list-box"></ul>
@@ -104,54 +102,6 @@
         <label style="font-size: 0.8rem; color: #94a3b8;">Upload Audio File (.mp3, .wav, .m4a)</label>
         <input type="file" id="songFileInput" accept="audio/*">
         <button id="btnAddSong" class="btn">Upload & Add to Queue</button>
-      </div>
-    </div>
-
-    <!-- DSP Mixer -->
-    <div id="mixerBoard" class="mixer">
-      <div class="channel-strip">
-        <div class="channel-title">CH 1: Master Controls</div>
-        
-        <div class="control-group">
-          <label>Gain / Vol</label>
-          <input type="range" id="vol1" min="0" max="1" step="0.01" value="0.8">
-        </div>
-        
-        <div class="control-group">
-          <label>Ch 1 Delay</label>
-          <input type="range" id="chDelay1" min="0" max="1" step="0.05" value="0">
-        </div>
-
-        <div class="control-group">
-          <label>EQ Low</label>
-          <input type="range" id="eqLow1" min="-12" max="12" step="1" value="0">
-        </div>
-        
-        <div class="control-group">
-          <label>EQ Mid</label>
-          <input type="range" id="eqMid1" min="-12" max="12" step="1" value="0">
-        </div>
-
-        <div class="control-group">
-          <label>EQ High</label>
-          <input type="range" id="eqHigh1" min="-12" max="12" step="1" value="0">
-        </div>
-
-        <button id="mute1" class="btn-mute">CHANNEL 1 MUTE</button>
-      </div>
-
-      <div class="channel-strip">
-        <div class="channel-title">DSP Master FX Bus</div>
-        
-        <div class="control-group">
-          <label>Master Delay</label>
-          <input type="range" id="fxDelay" min="0" max="1" step="0.05" value="0">
-        </div>
-
-        <div class="control-group">
-          <label>Reverb Feedback</label>
-          <input type="range" id="fxReverb" min="0" max="0.5" step="0.05" value="0">
-        </div>
       </div>
     </div>
   </div>
@@ -180,7 +130,6 @@
     const btnGlobalMute = document.getElementById('btnGlobalMute');
 
     let isAdmin = false;
-    let isChannelMuted = false;
     let isGlobalMuted = false;
     let isDeviceMuted = false;
 
@@ -188,7 +137,7 @@
     let currentPlaylist = [];
     let currentSongIdx = 0;
 
-    let audioCtx, source, masterMuteGain, chGainNode, chDelayNode, lowFilter, midFilter, highFilter, masterDelayNode, feedbackGainNode;
+    let audioCtx, source, masterMuteGain, chDelayNode, lowFilter, midFilter, highFilter;
 
     function initAudioContext() {
       if (audioCtx) return;
@@ -197,48 +146,31 @@
       audioCtx = new AudioCtx();
 
       source = audioCtx.createMediaElementSource(audio);
-      
       masterMuteGain = audioCtx.createGain();
-      chGainNode = audioCtx.createGain();
 
-      chDelayNode = audioCtx.createDelay(5.0);
-      chDelayNode.delayTime.value = 0;
+      chDelayNode = audioCtx.createDelay(5.0); chDelayNode.delayTime.value = 0;
 
       lowFilter = audioCtx.createBiquadFilter(); lowFilter.type = "lowshelf"; lowFilter.frequency.value = 320;
       midFilter = audioCtx.createBiquadFilter(); midFilter.type = "peaking"; midFilter.frequency.value = 1000; midFilter.Q.value = 0.5;
       highFilter = audioCtx.createBiquadFilter(); highFilter.type = "highshelf"; highFilter.frequency.value = 3200;
 
-      masterDelayNode = audioCtx.createDelay(5.0); masterDelayNode.delayTime.value = 0;
-      feedbackGainNode = audioCtx.createGain(); feedbackGainNode.gain.value = 0;
-
       source.connect(chDelayNode);
       chDelayNode.connect(lowFilter);
       lowFilter.connect(midFilter);
       midFilter.connect(highFilter);
-      highFilter.connect(chGainNode);
-      chGainNode.connect(masterMuteGain);
+      highFilter.connect(masterMuteGain);
 
       masterMuteGain.connect(audioCtx.destination);
-
-      masterMuteGain.connect(masterDelayNode);
-      masterDelayNode.connect(feedbackGainNode);
-      feedbackGainNode.connect(masterDelayNode);
-      masterDelayNode.connect(audioCtx.destination);
 
       updateEffectiveGain();
     }
 
     function updateEffectiveGain() {
-      const shouldMute = isChannelMuted || isGlobalMuted || isDeviceMuted;
-      
-      // Control Web Audio Graph Mute
+      const shouldMute = isGlobalMuted || isDeviceMuted;
       if (audioCtx && masterMuteGain) {
         masterMuteGain.gain.setValueAtTime(shouldMute ? 0 : 1, audioCtx.currentTime);
       }
-      
-      // Control HTML Audio Element direct mute fallback
       audio.muted = shouldMute;
-
       muteIndicator.style.display = shouldMute ? 'inline-block' : 'none';
     }
 
@@ -251,21 +183,12 @@
       if (data.success) {
         isAdmin = true;
         document.getElementById('loginModal').style.display = 'none';
-        adminContainer.style.display = 'block'; // Reveal admin options
+        adminContainer.style.display = 'block';
         roleBadge.textContent = 'Admin Mode';
         roleBadge.classList.add('admin');
         document.getElementById('btnAdmin').style.display = 'none';
         renderQueue();
       } else { alert(data.message); }
-    });
-
-    document.getElementById('mute1').addEventListener('click', () => {
-      initAudioContext();
-      isChannelMuted = !isChannelMuted;
-      const btn = document.getElementById('mute1');
-      btn.classList.toggle('active', isChannelMuted);
-      btn.textContent = isChannelMuted ? 'UNMUTE CHANNEL 1' : 'CHANNEL 1 MUTE';
-      updateEffectiveGain();
     });
 
     btnGlobalMute.addEventListener('click', () => {
@@ -284,72 +207,88 @@
       updateEffectiveGain();
     });
 
+    // Receive individual DSP parameter updates from admin
+    socket.on('apply_device_audio_setting', (data) => {
+      initAudioContext();
+      const val = parseFloat(data.value);
+      if (data.param === 'delay' && chDelayNode) chDelayNode.delayTime.value = val;
+      if (data.param === 'eqLow' && lowFilter) lowFilter.gain.value = val;
+      if (data.param === 'eqMid' && midFilter) midFilter.gain.value = val;
+      if (data.param === 'eqHigh' && highFilter) highFilter.gain.value = val;
+    });
+
     socket.on('device_list_update', (data) => {
       deviceCount.textContent = data.total;
       deviceList.innerHTML = '';
       data.devices.forEach(device => {
-        const li = document.createElement('li');
         const isSelf = device.id === socket.id;
-        li.className = `list-item ${isSelf ? 'active' : ''}`;
+        const div = document.createElement('div');
+        div.className = 'device-card';
         
-        let deviceControls = '';
+        let controlsHtml = '';
         if (isAdmin && !device.isAdmin) {
-          deviceControls = `
-            <button class="btn btn-sm ${device.isMuted ? '' : 'btn-danger'}" onclick="toggleDeviceMute('${device.id}')">
-              ${device.isMuted ? 'Unmute' : 'Mute'}
-            </button>`;
+          controlsHtml = `
+            <div class="device-controls">
+              <div class="control-group">
+                <label>Delay</label>
+                <input type="range" min="0" max="2" step="0.05" value="${device.settings.delay}" onchange="updateDeviceAudio('${device.id}', 'delay', this.value)">
+              </div>
+              <div class="control-group">
+                <label>EQ Low</label>
+                <input type="range" min="-12" max="12" step="1" value="${device.settings.eqLow}" onchange="updateDeviceAudio('${device.id}', 'eqLow', this.value)">
+              </div>
+              <div class="control-group">
+                <label>EQ Mid</label>
+                <input type="range" min="-12" max="12" step="1" value="${device.settings.eqMid}" onchange="updateDeviceAudio('${device.id}', 'eqMid', this.value)">
+              </div>
+              <div class="control-group">
+                <label>EQ High</label>
+                <input type="range" min="-12" max="12" step="1" value="${device.settings.eqHigh}" onchange="updateDeviceAudio('${device.id}', 'eqHigh', this.value)">
+              </div>
+            </div>`;
         }
 
-        li.innerHTML = `
-          <span>ID: ${device.id.substring(0, 8)}... ${isSelf ? '(You)' : ''} ${device.isMuted ? '🔇' : ''}</span>
-          <div class="item-actions">
-            <span style="margin-right: 0.3rem;">${device.isAdmin ? '👑 Admin' : '🎧 Listener'}</span>
-            ${deviceControls}
+        div.innerHTML = `
+          <div class="device-header">
+            <span>ID: ${device.id.substring(0, 8)}... ${isSelf ? '(You)' : ''} ${device.isMuted ? '🔇' : ''}</span>
+            <div class="item-actions">
+              <span style="margin-right: 0.3rem;">${device.isAdmin ? '👑 Admin' : '🎧 Listener'}</span>
+              ${isAdmin && !device.isAdmin ? `<button class="btn btn-sm ${device.isMuted ? '' : 'btn-danger'}" onclick="toggleDeviceMute('${device.id}')">${device.isMuted ? 'Unmute' : 'Mute'}</button>` : ''}
+            </div>
           </div>
+          ${controlsHtml}
         `;
-        deviceList.appendChild(li);
+        deviceList.appendChild(div);
       });
     });
 
-    window.toggleDeviceMute = (targetId) => {
-      socket.emit('toggle_device_mute', targetId);
+    window.toggleDeviceMute = (targetId) => { socket.emit('toggle_device_mute', targetId); };
+    window.updateDeviceAudio = (targetId, param, value) => {
+      socket.emit('update_device_audio_setting', { targetId, param, value });
     };
 
     document.getElementById('btnAddSong').addEventListener('click', () => {
       const fileInput = document.getElementById('songFileInput');
       const btn = document.getElementById('btnAddSong');
       const file = fileInput.files[0];
-      
       if (!file) { alert("Please select an audio file first!"); return; }
 
-      btn.disabled = true;
-      btn.textContent = "Processing File...";
-
+      btn.disabled = true; btn.textContent = "Processing File...";
       const reader = new FileReader();
       reader.onload = (e) => {
         socket.emit('add_to_queue', { id: 'song-' + Date.now(), title: file.name, url: e.target.result });
-        fileInput.value = '';
-        btn.disabled = false;
-        btn.textContent = "Upload & Add to Queue";
+        fileInput.value = ''; btn.disabled = false; btn.textContent = "Upload & Add to Queue";
       };
-      reader.onerror = () => {
-        alert("Error reading file");
-        btn.disabled = false;
-        btn.textContent = "Upload & Add to Queue";
-      };
+      reader.onerror = () => { alert("Error reading file"); btn.disabled = false; btn.textContent = "Upload & Add to Queue"; };
       reader.readAsDataURL(file);
     });
 
     socket.on('queue_update', (data) => {
-      currentPlaylist = data.playlist;
-      currentSongIdx = data.currentSongIndex;
-      renderQueue();
+      currentPlaylist = data.playlist; currentSongIdx = data.currentSongIndex; renderQueue();
     });
 
     socket.on('change_track', (data) => {
-      isRemoteChange = true;
-      audioSource.src = data.song.url;
-      audio.load();
+      isRemoteChange = true; audioSource.src = data.song.url; audio.load();
       nowPlayingText.textContent = `Track: ${data.song.title}`;
       audio.play().then(() => { isRemoteChange = false; }).catch(() => { isRemoteChange = false; });
     });
@@ -359,7 +298,6 @@
       currentPlaylist.forEach((song, idx) => {
         const li = document.createElement('li');
         li.className = `list-item ${idx === currentSongIdx ? 'active' : ''}`;
-        
         let controlsHtml = '';
         if (isAdmin) {
           controlsHtml = `
@@ -368,7 +306,6 @@
               <button class="btn btn-sm btn-danger" onclick="removeSong(${idx})">✕</button>
             </div>`;
         }
-
         li.innerHTML = `<span class="item-title">${idx + 1}. ${song.title}</span>${controlsHtml}`;
         queueList.appendChild(li);
       });
@@ -377,41 +314,12 @@
     window.selectSong = (index) => { socket.emit('select_song', index); };
     window.removeSong = (index) => { socket.emit('remove_from_queue', index); };
 
-    socket.on('connect', () => {
-      status.textContent = '● Connected';
-      status.className = 'status online';
-    });
+    socket.on('connect', () => { status.textContent = '● Connected'; status.className = 'status online'; });
+    socket.on('disconnect', () => { status.textContent = '● Reconnecting...'; status.className = 'status'; });
 
-    socket.on('disconnect', () => {
-      status.textContent = '● Reconnecting...';
-      status.className = 'status';
-    });
-
-    socket.on('play', (data) => {
-      initAudioContext();
-      isRemoteChange = true; audio.currentTime = data.time; audio.play().then(() => { isRemoteChange = false; });
-    });
+    socket.on('play', (data) => { initAudioContext(); isRemoteChange = true; audio.currentTime = data.time; audio.play().then(() => { isRemoteChange = false; }); });
     socket.on('pause', (data) => { isRemoteChange = true; audio.currentTime = data.time; audio.pause(); isRemoteChange = false; });
     socket.on('seek', (data) => { isRemoteChange = true; audio.currentTime = data.time; isRemoteChange = false; });
-
-    function applyMixerSetting(id, val) {
-      if (!audioCtx) return;
-      const v = parseFloat(val);
-      if (id === 'vol1') chGainNode.gain.value = v;
-      if (id === 'chDelay1') chDelayNode.delayTime.value = v;
-      if (id === 'eqLow1') lowFilter.gain.value = v;
-      if (id === 'eqMid1') midFilter.gain.value = v;
-      if (id === 'eqHigh1') highFilter.gain.value = v;
-      if (id === 'fxDelay') masterDelayNode.delayTime.value = v;
-      if (id === 'fxReverb') feedbackGainNode.gain.value = Math.min(v, 0.5);
-    }
-
-    socket.on('mixer_update', (data) => {
-      if (document.getElementById(data.id)) {
-        document.getElementById(data.id).value = data.value;
-        applyMixerSetting(data.id, data.value);
-      }
-    });
 
     audio.addEventListener('play', () => {
       initAudioContext();
@@ -421,19 +329,8 @@
     audio.addEventListener('pause', () => { if (isAdmin && !isRemoteChange) socket.emit('pause', { time: audio.currentTime }); });
     audio.addEventListener('seeked', () => { if (isAdmin && !isRemoteChange) socket.emit('seek', { time: audio.currentTime }); });
 
-    document.querySelectorAll('input[type="range"]').forEach(input => {
-      input.addEventListener('input', (e) => {
-        if (!isAdmin) return;
-        initAudioContext();
-        applyMixerSetting(e.target.id, e.target.value);
-        socket.emit('mixer_update', { id: e.target.id, value: e.target.value });
-      });
-    });
-
     audio.addEventListener('ended', () => {
-      if (isAdmin && currentSongIdx + 1 < currentPlaylist.length) {
-        selectSong(currentSongIdx + 1);
-      }
+      if (isAdmin && currentSongIdx + 1 < currentPlaylist.length) selectSong(currentSongIdx + 1);
     });
   </script>
 </body>
