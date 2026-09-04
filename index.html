@@ -104,9 +104,9 @@
     </div>
   </div>
 
-  <!-- Mixer Board with Individual Delay Control -->
+  <!-- Mixer Board -->
   <div id="mixerBoard" class="mixer disabled">
-    <!-- Channel 1: Ahuja Console Logic -->
+    <!-- Channel 1 Strip -->
     <div class="channel-strip">
       <div class="channel-title">CH 1: Ahuja Console</div>
       
@@ -115,7 +115,6 @@
         <input type="range" id="vol1" min="0" max="1" step="0.01" value="0.8">
       </div>
       
-      <!-- Individual Channel Delay Control -->
       <div class="control-group">
         <label>Ch 1 Delay</label>
         <input type="range" id="chDelay1" min="0" max="1" step="0.05" value="0">
@@ -139,7 +138,7 @@
       <button id="mute1" class="btn-mute">MUTE</button>
     </div>
 
-    <!-- Master DSP FX Bus -->
+    <!-- Master DSP Bus Strip -->
     <div class="channel-strip">
       <div class="channel-title">DSP Master FX Bus</div>
       
@@ -150,7 +149,7 @@
 
       <div class="control-group">
         <label>Reverb Feedback</label>
-        <input type="range" id="fxReverb" min="0" max="0.9" step="0.05" value="0">
+        <input type="range" id="fxReverb" min="0" max="0.5" step="0.05" value="0">
       </div>
     </div>
   </div>
@@ -178,52 +177,66 @@
     const nowPlayingText = document.getElementById('nowPlayingText');
 
     let isAdmin = false;
+    let isMuted = false;
     let isRemoteChange = false;
     let currentPlaylist = [];
     let currentSongIdx = 0;
 
-    // Web Audio Nodes
-    let audioCtx, source, gainNode, chDelayNode, lowFilter, midFilter, highFilter, masterDelayNode, feedbackNode;
+    // AudioContext Setup
+    let audioCtx, source, gainNode, chDelayNode, lowFilter, midFilter, highFilter, masterDelayNode, feedbackGainNode;
 
     function initAudioContext() {
       if (audioCtx) return;
-      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      audioCtx = new AudioCtx();
+
       source = audioCtx.createMediaElementSource(audio);
-      
       gainNode = audioCtx.createGain();
 
-      // Channel 1 Specific Delay
-      chDelayNode = audioCtx.createDelay();
+      // Channel 1 Local Delay
+      chDelayNode = audioCtx.createDelay(5.0);
       chDelayNode.delayTime.value = 0;
 
-      // Equalizer Nodes
-      lowFilter = audioCtx.createBiquadFilter(); lowFilter.type = "lowshelf"; lowFilter.frequency.value = 320;
-      midFilter = audioCtx.createBiquadFilter(); midFilter.type = "peaking"; midFilter.frequency.value = 1000;
-      highFilter = audioCtx.createBiquadFilter(); highFilter.type = "highshelf"; highFilter.frequency.value = 3200;
+      // Clean EQ Filters
+      lowFilter = audioCtx.createBiquadFilter(); 
+      lowFilter.type = "lowshelf"; 
+      lowFilter.frequency.value = 320;
 
-      // Master FX Nodes
-      masterDelayNode = audioCtx.createDelay(); 
+      midFilter = audioCtx.createBiquadFilter(); 
+      midFilter.type = "peaking"; 
+      midFilter.frequency.value = 1000;
+      midFilter.Q.value = 0.5;
+
+      highFilter = audioCtx.createBiquadFilter(); 
+      highFilter.type = "highshelf"; 
+      highFilter.frequency.value = 3200;
+
+      // Master Delay & Safe Feedback Bus
+      masterDelayNode = audioCtx.createDelay(5.0); 
       masterDelayNode.delayTime.value = 0;
-      feedbackNode = audioCtx.createGain();
-      feedbackNode.gain.value = 0;
 
-      // Audio Graph Connection Flow
+      feedbackGainNode = audioCtx.createGain();
+      feedbackGainNode.gain.value = 0; // Capped feedback to avoid infinite humming
+
+      // CLEAN UNIDIRECTIONAL AUDIO ROUTING GRAPH
       source.connect(chDelayNode);
       chDelayNode.connect(lowFilter);
       lowFilter.connect(midFilter);
       midFilter.connect(highFilter);
       highFilter.connect(gainNode);
 
-      // Master FX Routing
-      gainNode.connect(masterDelayNode);
-      masterDelayNode.connect(feedbackNode);
-      feedbackNode.connect(masterDelayNode);
-      masterDelayNode.connect(audioCtx.destination);
-
+      // Connect Direct Path to Speaker
       gainNode.connect(audioCtx.destination);
+
+      // Connect Master Delay FX (Parallel Processing)
+      gainNode.connect(masterDelayNode);
+      masterDelayNode.connect(feedbackGainNode);
+      feedbackGainNode.connect(masterDelayNode);
+      masterDelayNode.connect(audioCtx.destination);
     }
 
-    // Modal Events
+    // Modal Controls
     document.getElementById('btnAdmin').addEventListener('click', () => { document.getElementById('loginModal').style.display = 'flex'; });
     document.getElementById('btnSubmitPassword').addEventListener('click', () => {
       socket.emit('admin_login', { password: document.getElementById('adminPassword').value });
@@ -242,7 +255,7 @@
       } else { alert(data.message); }
     });
 
-    // Device List Updates
+    // Device Tracker Updates
     socket.on('device_list_update', (data) => {
       deviceCount.textContent = data.total;
       deviceList.innerHTML = '';
@@ -258,7 +271,7 @@
       });
     });
 
-    // File Upload Handler
+    // File Upload System
     document.getElementById('btnAddSong').addEventListener('click', () => {
       const fileInput = document.getElementById('songFileInput');
       const btn = document.getElementById('btnAddSong');
@@ -321,7 +334,7 @@
     window.selectSong = (index) => { socket.emit('select_song', index); };
     window.removeSong = (index) => { socket.emit('remove_from_queue', index); };
 
-    // Socket Transport Sync
+    // Socket Synchronizer
     socket.on('connect', () => { status.textContent = '● Connected'; status.className = 'status online'; });
     socket.on('play', (data) => {
       isRemoteChange = true; audio.currentTime = data.time; audio.play().then(() => { isRemoteChange = false; });
@@ -329,18 +342,34 @@
     socket.on('pause', (data) => { isRemoteChange = true; audio.currentTime = data.time; audio.pause(); isRemoteChange = false; });
     socket.on('seek', (data) => { isRemoteChange = true; audio.currentTime = data.time; isRemoteChange = false; });
 
-    // Mixer Sync Function
+    // Live Parameter Adjuster
     function applyMixerSetting(id, val) {
       if (!audioCtx) return;
       const v = parseFloat(val);
-      if (id === 'vol1') gainNode.gain.value = v;
+      if (id === 'vol1' && !isMuted) gainNode.gain.value = v;
       if (id === 'chDelay1') chDelayNode.delayTime.value = v;
       if (id === 'eqLow1') lowFilter.gain.value = v;
       if (id === 'eqMid1') midFilter.gain.value = v;
       if (id === 'eqHigh1') highFilter.gain.value = v;
       if (id === 'fxDelay') masterDelayNode.delayTime.value = v;
-      if (id === 'fxReverb') feedbackNode.gain.value = v;
+      if (id === 'fxReverb') feedbackGainNode.gain.value = Math.min(v, 0.5); // Cap to safety
     }
+
+    // Mute Toggle Button
+    document.getElementById('mute1').addEventListener('click', () => {
+      initAudioContext();
+      isMuted = !isMuted;
+      const btn = document.getElementById('mute1');
+      if (isMuted) {
+        gainNode.gain.value = 0;
+        btn.classList.add('active');
+        btn.textContent = 'UNMUTE';
+      } else {
+        gainNode.gain.value = parseFloat(document.getElementById('vol1').value);
+        btn.classList.remove('active');
+        btn.textContent = 'MUTE';
+      }
+    });
 
     socket.on('mixer_update', (data) => {
       if (document.getElementById(data.id)) {
@@ -349,7 +378,7 @@
       }
     });
 
-    // Local Event Emitters
+    // Transport Handlers
     audio.addEventListener('play', () => {
       initAudioContext();
       if (audioCtx.state === 'suspended') audioCtx.resume();
