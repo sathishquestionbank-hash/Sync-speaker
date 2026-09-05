@@ -30,8 +30,9 @@
 
     .list-box { list-style: none; max-height: 350px; overflow-y: auto; background: #0f172a; border: 1px solid #334155; border-radius: 6px; padding: 0.5rem; }
     .device-card { background: #1e293b; border: 1px solid #334155; border-radius: 6px; padding: 0.75rem; margin-bottom: 0.5rem; display: flex; flex-direction: column; gap: 0.5rem; }
-    .device-header { display: flex; justify-content: space-between; align-items: center; font-size: 0.85rem; font-weight: bold; }
-    .device-controls { display: grid; grid-template-columns: 1fr; gap: 0.5rem; padding-top: 0.5rem; border-top: 1px solid #334155; }
+    .device-header { display: flex; justify-content: space-between; align-items: center; font-size: 0.9rem; font-weight: bold; }
+    .channel-title { color: var(--accent); font-size: 0.95rem; }
+    .device-controls { display: flex; flex-direction: column; gap: 0.5rem; padding-top: 0.5rem; border-top: 1px solid #334155; }
     
     .list-item { display: flex; justify-content: space-between; align-items: center; padding: 0.4rem; font-size: 0.8rem; border-bottom: 1px solid #1e293b; }
     .list-item.active { border-left: 3px solid var(--accent); background: #1e293b; font-weight: bold; }
@@ -40,10 +41,10 @@
 
     input[type="text"], input[type="file"], input[type="password"] { width: 100%; padding: 0.5rem; background: #0f172a; border: 1px solid #334155; color: white; border-radius: 4px; font-size: 0.85rem; }
 
-    .control-group { display: flex; justify-content: space-between; align-items: center; font-size: 0.75rem; background: #0f172a; padding: 0.4rem; border-radius: 4px; }
-    .control-group label { color: #94a3b8; font-weight: 500; }
-    input[type="range"] { width: 45%; }
-    .val-display { font-size: 0.75rem; color: var(--accent); min-width: 40px; text-align: right; font-weight: bold; }
+    .control-group { display: flex; justify-content: space-between; align-items: center; font-size: 0.8rem; background: #0f172a; padding: 0.5rem; border-radius: 4px; border: 1px solid #334155; }
+    .control-group label { color: #f8fafc; font-weight: 600; }
+    input[type="range"] { width: 50%; cursor: pointer; }
+    .val-display { font-size: 0.8rem; color: var(--accent); min-width: 45px; text-align: right; font-weight: bold; }
     
     .btn { background: #0284c7; border: none; color: white; padding: 0.4rem 0.8rem; border-radius: 4px; cursor: pointer; font-size: 0.8rem; }
     .btn-sm { padding: 0.2rem 0.5rem; font-size: 0.75rem; }
@@ -97,13 +98,13 @@
       <button id="btnToggleMic" class="btn btn-mic">🎤 Start WebRTC Mic Broadcast</button>
     </div>
 
-    <!-- Connected Devices Panel with Individual Delay Control -->
+    <!-- Connected Devices Panel with Channel Labels & Individual Delay -->
     <div class="card">
       <div style="display: flex; justify-content: space-between; align-items: center;">
         <h4 style="font-size: 0.9rem; color: #94a3b8;">
-          Connected Devices (<span id="deviceCount">0</span>)
+          Connected Channels (<span id="deviceCount">0</span>)
         </h4>
-        <button id="btnGlobalMute" class="btn btn-sm btn-danger">Mute All Devices</button>
+        <button id="btnGlobalMute" class="btn btn-sm btn-danger">Mute All Channels</button>
       </div>
       <div id="deviceList" class="list-box"></div>
     </div>
@@ -332,14 +333,14 @@
       micLiveIndicator.style.display = 'none';
     });
 
-    // --- Device Controls & Setup ---
+    // --- Device Controls & Channel Rendering ---
     btnGlobalMute.addEventListener('click', () => {
       if (isAdmin) socket.emit('toggle_global_mute');
     });
 
     socket.on('global_mute_state', (data) => {
       isGlobalMuted = data.isMuted;
-      btnGlobalMute.textContent = isGlobalMuted ? 'Unmute All Devices' : 'Mute All Devices';
+      btnGlobalMute.textContent = isGlobalMuted ? 'Unmute All Channels' : 'Mute All Channels';
       btnGlobalMute.classList.toggle('active', isGlobalMuted);
       updateEffectiveGain();
     });
@@ -353,11 +354,6 @@
       initAudioContext();
       const val = parseFloat(data.value);
       if (data.param === 'delay' && chDelayNode) chDelayNode.delayTime.value = val;
-      if (data.param === 'eqLow' && lowFilter) lowFilter.gain.value = val;
-      if (data.param === 'eqMid' && midFilter) midFilter.gain.value = val;
-      if (data.param === 'eqHigh' && highFilter) highFilter.gain.value = val;
-      if (data.param === 'echoTime' && echoDelayNode) echoDelayNode.delayTime.value = val;
-      if (data.param === 'echoFeedback' && echoFeedbackGainNode) echoFeedbackGainNode.gain.value = Math.min(val, 0.85);
     });
 
     socket.on('device_list_update', (data) => {
@@ -365,12 +361,13 @@
       connectedDevicesList = data.devices;
       deviceList.innerHTML = '';
       
-      data.devices.forEach(device => {
+      data.devices.forEach((device, index) => {
         const isSelf = device.id === socket.id;
+        const channelNum = index + 1; // Creates Channel 1, Channel 2, Channel 3
         const div = document.createElement('div');
         div.className = 'device-card';
 
-        const delayVal = (device.settings && device.settings.delay) ? device.settings.delay : 0;
+        const delayVal = (device.settings && device.settings.delay !== undefined) ? device.settings.delay : 0;
         
         let controlsHtml = '';
         if (isAdmin) {
@@ -386,7 +383,10 @@
 
         div.innerHTML = `
           <div class="device-header">
-            <span>ID: ${device.id.substring(0, 8)}... ${isSelf ? '(You)' : ''} ${device.isMuted ? '🔇' : ''}</span>
+            <div>
+              <span class="channel-title">Channel ${channelNum}</span>
+              <span style="font-size: 0.75rem; color: #94a3b8; margin-left: 0.3rem;">(${device.id.substring(0, 6)}...) ${isSelf ? '<b>[You]</b>' : ''} ${device.isMuted ? '🔇' : ''}</span>
+            </div>
             <div class="item-actions">
               <span style="margin-right: 0.3rem;">${device.isAdmin ? '👑 Admin' : '🎧 Listener'}</span>
               ${isAdmin && !device.isAdmin ? `<button class="btn btn-sm ${device.isMuted ? '' : 'btn-danger'}" onclick="toggleDeviceMute('${device.id}')">${device.isMuted ? 'Unmute' : 'Mute'}</button>` : ''}
