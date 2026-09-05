@@ -41,10 +41,10 @@
 
     input[type="text"], input[type="file"], input[type="password"] { width: 100%; padding: 0.5rem; background: #0f172a; border: 1px solid #334155; color: white; border-radius: 4px; font-size: 0.85rem; }
 
-    .control-group { display: flex; justify-content: space-between; align-items: center; font-size: 0.8rem; background: #0f172a; padding: 0.5rem; border-radius: 4px; border: 1px solid #334155; }
+    .control-group { display: flex; justify-content: space-between; align-items: center; font-size: 0.8rem; background: #0f172a; padding: 0.5rem; border-radius: 4px; border: 1px solid #334155; margin-bottom: 0.3rem; }
     .control-group label { color: #f8fafc; font-weight: 600; }
     input[type="range"] { width: 50%; cursor: pointer; }
-    .val-display { font-size: 0.8rem; color: var(--accent); min-width: 45px; text-align: right; font-weight: bold; }
+    .val-display { font-size: 0.8rem; color: var(--accent); min-width: 50px; text-align: right; font-weight: bold; }
     
     .btn { background: #0284c7; border: none; color: white; padding: 0.4rem 0.8rem; border-radius: 4px; cursor: pointer; font-size: 0.8rem; }
     .btn-sm { padding: 0.2rem 0.5rem; font-size: 0.75rem; }
@@ -98,9 +98,19 @@
       <button id="btnToggleMic" class="btn btn-mic">🎤 Start WebRTC Mic Broadcast</button>
     </div>
 
-    <!-- Connected Devices Panel with Channel Labels & Individual Delay -->
+    <!-- Global Controls -->
     <div class="card">
-      <div style="display: flex; justify-content: space-between; align-items: center;">
+      <h3>Master / Global Audio Controls</h3>
+      <div class="control-group">
+        <label>Global Stereo Pan</label>
+        <input type="range" id="globalPanSlider" min="-1" max="1" step="0.1" value="0">
+        <span id="valGlobalPan" class="val-display">Center</span>
+      </div>
+    </div>
+
+    <!-- Connected Devices Panel -->
+    <div class="card">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
         <h4 style="font-size: 0.9rem; color: #94a3b8;">
           Connected Channels (<span id="deviceCount">0</span>)
         </h4>
@@ -154,6 +164,8 @@
     const nowPlayingText = document.getElementById('nowPlayingText');
     const btnGlobalMute = document.getElementById('btnGlobalMute');
     const btnToggleMic = document.getElementById('btnToggleMic');
+    const globalPanSlider = document.getElementById('globalPanSlider');
+    const valGlobalPan = document.getElementById('valGlobalPan');
 
     let isAdmin = false;
     let isGlobalMuted = false;
@@ -171,7 +183,7 @@
     let currentSongIdx = 0;
     let connectedDevicesList = [];
 
-    let audioCtx, source, masterMuteGain, chDelayNode, lowFilter, midFilter, highFilter, echoDelayNode, echoFeedbackGainNode;
+    let audioCtx, source, masterMuteGain, pannerNode, chDelayNode, lowFilter, midFilter, highFilter, echoDelayNode, echoFeedbackGainNode;
 
     function initAudioContext() {
       if (audioCtx) return;
@@ -182,6 +194,12 @@
       source = audioCtx.createMediaElementSource(audio);
       masterMuteGain = audioCtx.createGain();
 
+      // Pan node using StereoPannerNode (or fallback)
+      if (audioCtx.createStereoPanner) {
+        pannerNode = audioCtx.createStereoPanner();
+        pannerNode.pan.value = 0;
+      }
+
       chDelayNode = audioCtx.createDelay(5.0); chDelayNode.delayTime.value = 0;
       lowFilter = audioCtx.createBiquadFilter(); lowFilter.type = "lowshelf"; lowFilter.frequency.value = 320;
       midFilter = audioCtx.createBiquadFilter(); midFilter.type = "peaking"; midFilter.frequency.value = 1000; midFilter.Q.value = 0.5;
@@ -190,11 +208,18 @@
       echoDelayNode = audioCtx.createDelay(5.0); echoDelayNode.delayTime.value = 0;
       echoFeedbackGainNode = audioCtx.createGain(); echoFeedbackGainNode.gain.value = 0;
 
+      // Audio Chain
       source.connect(chDelayNode);
       chDelayNode.connect(lowFilter);
       lowFilter.connect(midFilter);
       midFilter.connect(highFilter);
-      highFilter.connect(masterMuteGain);
+      
+      if (pannerNode) {
+        highFilter.connect(pannerNode);
+        pannerNode.connect(masterMuteGain);
+      } else {
+        highFilter.connect(masterMuteGain);
+      }
 
       masterMuteGain.connect(echoDelayNode);
       echoDelayNode.connect(echoFeedbackGainNode);
@@ -204,6 +229,13 @@
       masterMuteGain.connect(audioCtx.destination);
 
       updateEffectiveGain();
+    }
+
+    function formatPanText(val) {
+      const v = parseFloat(val);
+      if (v === 0) return 'Center';
+      if (v < 0) return `L ${Math.round(Math.abs(v) * 100)}%`;
+      return `R ${Math.round(v * 100)}%`;
     }
 
     function updateEffectiveGain() {
@@ -231,6 +263,22 @@
         document.getElementById('btnAdmin').style.display = 'none';
         renderQueue();
       } else { alert(data.message); }
+    });
+
+    // --- Global Pan Event Listener ---
+    globalPanSlider.addEventListener('input', (e) => {
+      const val = e.target.value;
+      valGlobalPan.textContent = formatPanText(val);
+      socket.emit('update_global_audio_setting', { param: 'pan', value: val });
+    });
+
+    socket.on('apply_global_audio_setting', (data) => {
+      initAudioContext();
+      if (data.param === 'pan' && pannerNode) {
+        pannerNode.pan.value = parseFloat(data.value);
+        globalPanSlider.value = data.value;
+        valGlobalPan.textContent = formatPanText(data.value);
+      }
     });
 
     // --- WebRTC Logic ---
@@ -354,6 +402,7 @@
       initAudioContext();
       const val = parseFloat(data.value);
       if (data.param === 'delay' && chDelayNode) chDelayNode.delayTime.value = val;
+      if (data.param === 'pan' && pannerNode) pannerNode.pan.value = val;
     });
 
     socket.on('device_list_update', (data) => {
@@ -363,11 +412,12 @@
       
       data.devices.forEach((device, index) => {
         const isSelf = device.id === socket.id;
-        const channelNum = index + 1; // Creates Channel 1, Channel 2, Channel 3
+        const channelNum = index + 1;
         const div = document.createElement('div');
         div.className = 'device-card';
 
         const delayVal = (device.settings && device.settings.delay !== undefined) ? device.settings.delay : 0;
+        const panVal = (device.settings && device.settings.pan !== undefined) ? device.settings.pan : 0;
         
         let controlsHtml = '';
         if (isAdmin) {
@@ -377,6 +427,11 @@
                 <label>Audio Delay</label>
                 <input type="range" min="0" max="3" step="0.05" value="${delayVal}" oninput="updateDeviceAudio('${device.id}', 'delay', this.value)">
                 <span id="val-delay-${device.id}" class="val-display">${delayVal}s</span>
+              </div>
+              <div class="control-group">
+                <label>Stereo Pan</label>
+                <input type="range" min="-1" max="1" step="0.1" value="${panVal}" oninput="updateDeviceAudio('${device.id}', 'pan', this.value)">
+                <span id="val-pan-${device.id}" class="val-display">${formatPanText(panVal)}</span>
               </div>
             </div>`;
         }
@@ -401,7 +456,9 @@
     window.toggleDeviceMute = (targetId) => { socket.emit('toggle_device_mute', targetId); };
     window.updateDeviceAudio = (targetId, param, value) => { 
       const displayElem = document.getElementById(`val-${param}-${targetId}`);
-      if (displayElem) displayElem.innerText = value + 's';
+      if (displayElem) {
+        displayElem.innerText = param === 'pan' ? formatPanText(value) : value + 's';
+      }
       socket.emit('update_device_audio_setting', { targetId, param, value }); 
     };
 
