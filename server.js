@@ -5,143 +5,158 @@ const path = require('path');
 
 const app = express();
 const server = http.createServer(app);
-
-server.on('connection', (socket) => {
-  socket.setNoDelay(true);
-});
-
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "admin123";
-const MAX_ADMINS = 2; // Strict limit on concurrent admins
-
 const io = new Server(server, {
-  transports: ['websocket'],
-  pingTimeout: 10000,
-  pingInterval: 5000,
-  cors: { origin: "*", methods: ["GET", "POST"] }
+  cors: { origin: "*" },
+  maxHttpBufferSize: 1e8 // Allow up to 100MB file uploads
 });
 
-app.use(express.static(path.join(__dirname)));
+app.use(express.static(path.join(__dirname, 'public')));
 
-app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'index.html'));
-});
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
+const MAX_ADMINS = 2;
 
-let connectedDevices = [];
-let playlist = [
-  { id: 'default-1', title: 'Default Demo Track', url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3' }
-];
-let currentSongIndex = 0;
+let activeAdminsCount = 0;
 let isGlobalMuted = false;
 
-function broadcastDeviceList() {
-  io.emit('device_list_update', { devices: connectedDevices, total: connectedDevices.length, isGlobalMuted });
-}
+// Global audio settings (Pan, Master Volume, EQ, etc.)
+let globalAudioSettings = {
+  pan: 0
+};
 
-function getAdminCount() {
-  return connectedDevices.filter(d => d.isAdmin).length;
+// Store connected devices and their individual settings
+const connectedDevices = new Map();
+
+// Song Queue State
+let playlist = [
+  { id: 'demo-1', title: 'Default Demo Track', url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3' }
+];
+let currentSongIndex = 0;
+
+function broadcastDeviceList() {
+  const devicesArr = Array.from(connectedDevices.entries()).map(([id, info]) => ({
+    id,
+    isAdmin: info.isAdmin,
+    isMuted: info.isMuted,
+    settings: info.settings
+  }));
+
+  io.emit('device_list_update', {
+    total: devicesArr.length,
+    devices: devicesArr
+  });
 }
 
 io.on('connection', (socket) => {
-  connectedDevices.push({
-    id: socket.id,
+  // Initialize device state with default delay and pan settings
+  connectedDevices.set(socket.id, {
     isAdmin: false,
     isMuted: false,
-    settings: { delay: 0, eqLow: 0, eqMid: 0, eqHigh: 0, echoTime: 0, echoFeedback: 0 }
+    settings: {
+      delay: 0,
+      pan: 0
+    }
   });
 
-  broadcastDeviceList();
-
+  // Send current queue state & global settings to newly connected device
   socket.emit('queue_update', { playlist, currentSongIndex });
   socket.emit('global_mute_state', { isMuted: isGlobalMuted });
+  socket.emit('apply_global_audio_setting', { param: 'pan', value: globalAudioSettings.pan });
+  
+  broadcastDeviceList();
 
-  // --- Strict 2-Admin Authentication ---
+  // Admin Login Handler
   socket.on('admin_login', (data) => {
-    if (data.password !== ADMIN_PASSWORD) {
-      return socket.emit('login_result', { success: false, message: "Invalid Password" });
-    }
+    if (data.password === ADMIN_PASSWORD) {
+      if (activeAdminsCount >= MAX_ADMINS) {
+        return socket.emit('login_result', { success: false, message: 'Max admin limit reached (Max 2).' });
+      }
 
-    if (getAdminCount() >= MAX_ADMINS) {
-      return socket.emit('login_result', { 
-        success: false, 
-        message: `Admin limit reached (${MAX_ADMINS} admins already connected).` 
-      });
-    }
-
-    const dev = connectedDevices.find(d => d.id === socket.id);
-    if (dev) dev.isAdmin = true;
-
-    socket.emit('login_result', { success: true });
-    broadcastDeviceList();
-  });
-
-  // --- WebRTC Signaling Channels ---
-  socket.on('webrtc_offer', (data) => {
-    const sender = connectedDevices.find(d => d.id === socket.id);
-    if (sender && sender.isAdmin) {
-      io.to(data.targetId).emit('webrtc_offer', { sdp: data.sdp, senderId: socket.id });
+      const dev = connectedDevices.get(socket.id);
+      if (dev) {
+        dev.isAdmin = true;
+        activeAdminsCount++;
+        socket.emit('login_result', { success: true });
+        broadcastDeviceList();
+      }
+    } else {
+      socket.emit('login_result', { success: false, message: 'Incorrect password.' });
     }
   });
 
-  socket.on('webrtc_answer', (data) => {
-    io.to(data.targetId).emit('webrtc_answer', { sdp: data.sdp, senderId: socket.id });
-  });
-
-  socket.on('webrtc_ice_candidate', (data) => {
-    io.to(data.targetId).emit('webrtc_ice_candidate', { candidate: data.candidate, senderId: socket.id });
-  });
-
-  socket.on('stop_mic_broadcast', () => {
-    const sender = connectedDevices.find(d => d.id === socket.id);
-    if (sender && sender.isAdmin) {
-      socket.broadcast.emit('stop_webrtc_stream');
-    }
-  });
-
-  // --- Controls & Playback ---
+  // Global Mute Handler
   socket.on('toggle_global_mute', () => {
-    const sender = connectedDevices.find(d => d.id === socket.id);
-    if (sender && sender.isAdmin) {
-      isGlobalMuted = !isGlobalMuted;
-      io.emit('global_mute_state', { isMuted: isGlobalMuted });
+    const dev = connectedDevices.get(socket.id);
+    if (!dev || !dev.isAdmin) return;
+
+    isGlobalMuted = !isGlobalMuted;
+    io.emit('global_mute_state', { isMuted: isGlobalMuted });
+  });
+
+  // Individual Device Mute Handler
+  socket.on('toggle_device_mute', (targetId) => {
+    const dev = connectedDevices.get(socket.id);
+    if (!dev || !dev.isAdmin) return;
+
+    const targetDev = connectedDevices.get(targetId);
+    if (targetDev) {
+      targetDev.isMuted = !targetDev.isMuted;
+      io.to(targetId).emit('device_mute_state', { isMuted: targetDev.isMuted });
       broadcastDeviceList();
     }
   });
 
-  socket.on('toggle_device_mute', (targetSocketId) => {
-    const sender = connectedDevices.find(d => d.id === socket.id);
-    if (sender && sender.isAdmin) {
-      const targetDevice = connectedDevices.find(d => d.id === targetSocketId);
-      if (targetDevice) {
-        targetDevice.isMuted = !targetDevice.isMuted;
-        io.to(targetSocketId).emit('device_mute_state', { isMuted: targetDevice.isMuted });
-        broadcastDeviceList();
-      }
-    }
-  });
-
-  // Individual Device Audio Parameters (including Delay)
+  // Update Individual Audio Settings (Delay, Pan)
   socket.on('update_device_audio_setting', (data) => {
-    const sender = connectedDevices.find(d => d.id === socket.id);
-    if (sender && sender.isAdmin) {
-      const targetDevice = connectedDevices.find(d => d.id === data.targetId);
-      if (targetDevice) {
-        targetDevice.settings[data.param] = data.value;
-        io.to(data.targetId).emit('apply_device_audio_setting', { param: data.param, value: data.value });
-      }
+    const dev = connectedDevices.get(socket.id);
+    if (!dev || !dev.isAdmin) return;
+
+    const { targetId, param, value } = data;
+    const targetDev = connectedDevices.get(targetId);
+
+    if (targetDev) {
+      if (!targetDev.settings) targetDev.settings = {};
+      targetDev.settings[param] = value;
+
+      // Direct target device to adjust its AudioContext nodes
+      io.to(targetId).emit('apply_device_audio_setting', { param, value });
+      broadcastDeviceList();
     }
   });
 
+  // Update Global Audio Settings (Global Pan)
+  socket.on('update_global_audio_setting', (data) => {
+    const dev = connectedDevices.get(socket.id);
+    if (!dev || !dev.isAdmin) return;
+
+    const { param, value } = data;
+    globalAudioSettings[param] = value;
+
+    // Broadcast global settings change to every connected listener
+    io.emit('apply_global_audio_setting', { param, value });
+  });
+
+  // Queue Management
   socket.on('add_to_queue', (song) => {
-    const sender = connectedDevices.find(d => d.id === socket.id);
-    if (sender && sender.isAdmin) {
-      playlist.push(song);
+    playlist.push(song);
+    io.emit('queue_update', { playlist, currentSongIndex });
+  });
+
+  socket.on('select_song', (index) => {
+    const dev = connectedDevices.get(socket.id);
+    if (!dev || !dev.isAdmin) return;
+
+    if (index >= 0 && index < playlist.length) {
+      currentSongIndex = index;
       io.emit('queue_update', { playlist, currentSongIndex });
+      io.emit('change_track', { song: playlist[currentSongIndex] });
     }
   });
 
   socket.on('remove_from_queue', (index) => {
-    const sender = connectedDevices.find(d => d.id === socket.id);
-    if (sender && sender.isAdmin && index >= 0 && index < playlist.length) {
+    const dev = connectedDevices.get(socket.id);
+    if (!dev || !dev.isAdmin) return;
+
+    if (index >= 0 && index < playlist.length) {
       playlist.splice(index, 1);
       if (currentSongIndex >= playlist.length) {
         currentSongIndex = Math.max(0, playlist.length - 1);
@@ -150,42 +165,51 @@ io.on('connection', (socket) => {
     }
   });
 
-  socket.on('select_song', (index) => {
-    const sender = connectedDevices.find(d => d.id === socket.id);
-    if (sender && sender.isAdmin && index >= 0 && index < playlist.length) {
-      currentSongIndex = index;
-      const song = playlist[currentSongIndex];
-      io.emit('change_track', { song, index: currentSongIndex });
-      io.emit('queue_update', { playlist, currentSongIndex });
-    }
-  });
-
+  // Playback Control Syncing
   socket.on('play', (data) => {
-    const sender = connectedDevices.find(d => d.id === socket.id);
-    if (sender && sender.isAdmin) socket.broadcast.emit('play', data);
+    const dev = connectedDevices.get(socket.id);
+    if (dev && dev.isAdmin) socket.broadcast.emit('play', data);
   });
 
   socket.on('pause', (data) => {
-    const sender = connectedDevices.find(d => d.id === socket.id);
-    if (sender && sender.isAdmin) socket.broadcast.emit('pause', data);
+    const dev = connectedDevices.get(socket.id);
+    if (dev && dev.isAdmin) socket.broadcast.emit('pause', data);
   });
 
   socket.on('seek', (data) => {
-    const sender = connectedDevices.find(d => d.id === socket.id);
-    if (sender && sender.isAdmin) socket.broadcast.emit('seek', data);
+    const dev = connectedDevices.get(socket.id);
+    if (dev && dev.isAdmin) socket.broadcast.emit('seek', data);
   });
 
+  // WebRTC Live Mic Signaling
+  socket.on('webrtc_offer', (data) => {
+    io.to(data.targetId).emit('webrtc_offer', { senderId: socket.id, sdp: data.sdp });
+  });
+
+  socket.on('webrtc_answer', (data) => {
+    io.to(data.targetId).emit('webrtc_answer', { senderId: socket.id, sdp: data.sdp });
+  });
+
+  socket.on('webrtc_ice_candidate', (data) => {
+    io.to(data.targetId).emit('webrtc_ice_candidate', { senderId: socket.id, candidate: data.candidate });
+  });
+
+  socket.on('stop_mic_broadcast', () => {
+    socket.broadcast.emit('stop_webrtc_stream');
+  });
+
+  // Disconnect Handler
   socket.on('disconnect', () => {
-    const dev = connectedDevices.find(d => d.id === socket.id);
-    if (dev && dev.isAdmin && getAdminCount() === 1) {
-      socket.broadcast.emit('stop_webrtc_stream');
+    const dev = connectedDevices.get(socket.id);
+    if (dev && dev.isAdmin) {
+      activeAdminsCount = Math.max(0, activeAdminsCount - 1);
     }
-    connectedDevices = connectedDevices.filter(d => d.id !== socket.id);
+    connectedDevices.delete(socket.id);
     broadcastDeviceList();
   });
 });
 
-const PORT = process.env.PORT || 8080;
-server.listen(PORT, '0.0.0.0', () => {
-  console.log(`Server listening on port ${PORT}`);
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => {
+  console.log(`Sync Speaker Studio running on port ${PORT}`);
 });
