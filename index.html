@@ -42,7 +42,8 @@
 
     .control-group { display: flex; justify-content: space-between; align-items: center; font-size: 0.75rem; }
     .control-group label { color: #94a3b8; }
-    input[type="range"] { width: 55%; }
+    input[type="range"] { width: 50%; }
+    .val-display { font-size: 0.7rem; color: var(--accent); min-width: 35px; text-align: right; }
     
     .btn { background: #0284c7; border: none; color: white; padding: 0.4rem 0.8rem; border-radius: 4px; cursor: pointer; font-size: 0.8rem; }
     .btn-sm { padding: 0.2rem 0.5rem; font-size: 0.75rem; }
@@ -86,19 +87,17 @@
       <source id="audioSource" src="https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3" type="audio/mpeg">
     </audio>
 
-    <!-- Hidden audio tag for WebRTC stream processing -->
     <audio id="webrtcAudio" autoplay style="display:none;"></audio>
   </div>
 
   <div class="admin-only" id="adminContainer" style="width: 100%; max-width: 650px;">
     
-    <!-- Admin Live Mic Control -->
     <div class="card">
-      <h3>Live Studio Microphone (WebRTC Ultra-Low Latency)</h3>
+      <h3>Live Studio Microphone (WebRTC Low-Latency)</h3>
       <button id="btnToggleMic" class="btn btn-mic">🎤 Start WebRTC Mic Broadcast</button>
     </div>
 
-    <!-- Devices Control Center -->
+    <!-- Connected Devices Panel with Individual Delay Control -->
     <div class="card">
       <div style="display: flex; justify-content: space-between; align-items: center;">
         <h4 style="font-size: 0.9rem; color: #94a3b8;">
@@ -109,7 +108,6 @@
       <div id="deviceList" class="list-box"></div>
     </div>
 
-    <!-- Song Queue -->
     <div class="card">
       <h3>Song Queue</h3>
       <ul id="queueList" class="list-box"></ul>
@@ -124,7 +122,7 @@
 
   <div id="loginModal" class="modal">
     <div class="modal-content">
-      <h3 style="margin-bottom: 1rem;">Admin Authentication</h3>
+      <h3 style="margin-bottom: 1rem;">Admin Authentication (Max 2)</h3>
       <input type="password" id="adminPassword" placeholder="Enter password...">
       <button id="btnSubmitPassword" class="btn" style="width: 100%; margin-top: 1rem;">Login</button>
     </div>
@@ -161,13 +159,11 @@
     let isDeviceMuted = false;
     let isMicActive = false;
 
-    let peerConnections = {}; // Key: socketId -> RTCPeerConnection (Admin side)
-    let listenerPeerConnection = null; // Single Peer Connection (Listener side)
+    let peerConnections = {};
+    let listenerPeerConnection = null;
     let micStream = null;
 
-    const rtcConfig = {
-      iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
-    };
+    const rtcConfig = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
 
     let isRemoteChange = false;
     let currentPlaylist = [];
@@ -236,7 +232,7 @@
       } else { alert(data.message); }
     });
 
-    // --- WebRTC Logic (Admin Broadcasting) ---
+    // --- WebRTC Logic ---
     btnToggleMic.addEventListener('click', async () => {
       if (!isMicActive) {
         try {
@@ -246,7 +242,6 @@
           btnToggleMic.classList.add('active');
           micLiveIndicator.style.display = 'inline-block';
 
-          // Connect to each listener via WebRTC
           connectedDevicesList.forEach(dev => {
             if (dev.id !== socket.id) {
               startWebRTCPeer(dev.id);
@@ -290,9 +285,7 @@
       socket.emit('webrtc_offer', { targetId, sdp: offer });
     }
 
-    // --- WebRTC Signaling Listeners ---
     socket.on('webrtc_offer', async (data) => {
-      // Listener receives call from Admin
       initAudioContext();
       if (listenerPeerConnection) listenerPeerConnection.close();
 
@@ -317,7 +310,6 @@
     });
 
     socket.on('webrtc_answer', async (data) => {
-      // Admin receives answer from listener
       const pc = peerConnections[data.senderId];
       if (pc) {
         await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
@@ -382,12 +374,31 @@
         if (isAdmin && !device.isAdmin) {
           controlsHtml = `
             <div class="device-controls">
-              <div class="control-group"><label>Delay</label><input type="range" min="0" max="2" step="0.05" value="${device.settings.delay}" onchange="updateDeviceAudio('${device.id}', 'delay', this.value)"></div>
-              <div class="control-group"><label>EQ Low</label><input type="range" min="-12" max="12" step="1" value="${device.settings.eqLow}" onchange="updateDeviceAudio('${device.id}', 'eqLow', this.value)"></div>
-              <div class="control-group"><label>EQ Mid</label><input type="range" min="-12" max="12" step="1" value="${device.settings.eqMid}" onchange="updateDeviceAudio('${device.id}', 'eqMid', this.value)"></div>
-              <div class="control-group"><label>EQ High</label><input type="range" min="-12" max="12" step="1" value="${device.settings.eqHigh}" onchange="updateDeviceAudio('${device.id}', 'eqHigh', this.value)"></div>
-              <div class="control-group"><label>Echo Time</label><input type="range" min="0" max="1" step="0.05" value="${device.settings.echoTime}" onchange="updateDeviceAudio('${device.id}', 'echoTime', this.value)"></div>
-              <div class="control-group"><label>Echo Repeat</label><input type="range" min="0" max="0.8" step="0.05" value="${device.settings.echoFeedback}" onchange="updateDeviceAudio('${device.id}', 'echoFeedback', this.value)"></div>
+              <div class="control-group">
+                <label>Audio Delay</label>
+                <input type="range" min="0" max="3" step="0.05" value="${device.settings.delay}" oninput="document.getElementById('val-delay-${device.id}').innerText = this.value + 's'; updateDeviceAudio('${device.id}', 'delay', this.value)">
+                <span id="val-delay-${device.id}" class="val-display">${device.settings.delay}s</span>
+              </div>
+              <div class="control-group">
+                <label>EQ Low</label>
+                <input type="range" min="-12" max="12" step="1" value="${device.settings.eqLow}" oninput="updateDeviceAudio('${device.id}', 'eqLow', this.value)">
+              </div>
+              <div class="control-group">
+                <label>EQ Mid</label>
+                <input type="range" min="-12" max="12" step="1" value="${device.settings.eqMid}" oninput="updateDeviceAudio('${device.id}', 'eqMid', this.value)">
+              </div>
+              <div class="control-group">
+                <label>EQ High</label>
+                <input type="range" min="-12" max="12" step="1" value="${device.settings.eqHigh}" oninput="updateDeviceAudio('${device.id}', 'eqHigh', this.value)">
+              </div>
+              <div class="control-group">
+                <label>Echo Time</label>
+                <input type="range" min="0" max="1" step="0.05" value="${device.settings.echoTime}" oninput="updateDeviceAudio('${device.id}', 'echoTime', this.value)">
+              </div>
+              <div class="control-group">
+                <label>Echo Repeat</label>
+                <input type="range" min="0" max="0.8" step="0.05" value="${device.settings.echoFeedback}" oninput="updateDeviceAudio('${device.id}', 'echoFeedback', this.value)">
+              </div>
             </div>`;
         }
 
