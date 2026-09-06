@@ -32,12 +32,12 @@
     .device-card { background: #1e293b; border: 1px solid #334155; border-radius: 6px; padding: 0.75rem; margin-bottom: 0.5rem; display: flex; flex-direction: column; gap: 0.5rem; }
     .device-header { display: flex; justify-content: space-between; align-items: center; font-size: 0.9rem; font-weight: bold; }
     .channel-title { color: var(--accent); font-size: 0.95rem; }
-    .device-controls { display: flex; flex-direction: column; gap: 0.5rem; padding-top: 0.5rem; border-top: 1px solid #334155; }
+    .device-controls { display: flex; flex-direction: column; gap: 0.5rem; padding-top: 0.5rem; border-top: 1px solid #334155; margin-top: 0.3rem; }
     
     .list-item { display: flex; justify-content: space-between; align-items: center; padding: 0.4rem; font-size: 0.8rem; border-bottom: 1px solid #1e293b; }
     .list-item.active { border-left: 3px solid var(--accent); background: #1e293b; font-weight: bold; }
-    .item-title { text-overflow: ellipsis; overflow: hidden; white-space: nowrap; max-width: 200px; }
-    .item-actions { display: flex; gap: 0.3rem; }
+    .item-title { text-overflow: ellipsis; overflow: hidden; white-space: nowrap; max-width: 250px; }
+    .item-actions { display: flex; gap: 0.3rem; align-items: center; }
 
     input[type="text"], input[type="file"], input[type="password"] { width: 100%; padding: 0.5rem; background: #0f172a; border: 1px solid #334155; color: white; border-radius: 4px; font-size: 0.85rem; }
 
@@ -60,7 +60,7 @@
 
     .admin-only { display: none; }
 
-    .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); justify-content: center; align-items: center; }
+    .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); justify-content: center; align-items: center; z-index: 1000; }
     .modal-content { background: var(--panel); padding: 2rem; border-radius: 8px; border: 1px solid #334155; text-align: center; max-width: 320px; width: 90%; }
   </style>
 
@@ -254,6 +254,7 @@
         roleBadge.classList.add('admin');
         document.getElementById('btnAdmin').style.display = 'none';
         renderQueue();
+        socket.emit('request_device_list_refresh');
       } else { alert(data.message); }
     });
 
@@ -409,14 +410,32 @@
       if (data.param === 'pan' && pannerNode) pannerNode.pan.value = val;
     });
 
+    // Global scopes for inline button/slider callbacks
+    window.updateDeviceAudio = (targetId, param, value) => { 
+      const displayElem = document.getElementById(`val-${param}-${targetId}`);
+      if (displayElem) {
+        displayElem.innerText = param === 'pan' ? formatPanText(value) : value + 's';
+      }
+      socket.emit('update_device_audio_setting', { targetId, param, value }); 
+    };
+
+    window.toggleDeviceMute = (targetId) => { 
+      socket.emit('toggle_device_mute', targetId); 
+    };
+
     socket.on('device_list_update', (data) => {
       deviceCount.textContent = data.total;
       connectedDevicesList = data.devices;
-      deviceList.innerHTML = '';
+      
+      const listContainer = document.getElementById('deviceList');
+      if (!listContainer) return;
+
+      listContainer.innerHTML = '';
       
       data.devices.forEach((device, index) => {
         const isSelf = device.id === socket.id;
-        const channelNum = index + 1;
+        const channelNum = index + 1; // Explicit Channel Mapping
+        
         const div = document.createElement('div');
         div.className = 'device-card';
 
@@ -443,29 +462,29 @@
         div.innerHTML = `
           <div class="device-header">
             <div>
-              <span class="channel-title">Channel ${channelNum}</span>
-              <span style="font-size: 0.75rem; color: #94a3b8; margin-left: 0.3rem;">(${device.id.substring(0, 6)}...) ${isSelf ? '<b>[You]</b>' : ''} ${device.isMuted ? '🔇' : ''}</span>
+              <span class="channel-title" style="font-weight:bold; color: var(--accent);">Channel ${channelNum}</span>
+              <span style="font-size: 0.75rem; color: #94a3b8; margin-left: 0.3rem;">
+                (${device.id.substring(0, 5)}) ${isSelf ? '<b style="color:#22c55e;">[You]</b>' : ''} ${device.isMuted ? '🔇' : ''}
+              </span>
             </div>
             <div class="item-actions">
-              <span style="margin-right: 0.3rem;">${device.isAdmin ? '👑 Admin' : '🎧 Listener'}</span>
-              ${isAdmin && !device.isAdmin ? `<button class="btn btn-sm ${device.isMuted ? '' : 'btn-danger'}" onclick="toggleDeviceMute('${device.id}')">${device.isMuted ? 'Unmute' : 'Mute'}</button>` : ''}
+              <span style="font-size:0.75rem; background:#334155; padding:2px 6px; border-radius:4px;">
+                ${device.isAdmin ? '👑 Admin' : '🎧 Listener'}
+              </span>
+              ${isAdmin && !device.isAdmin ? `
+                <button class="btn btn-sm ${device.isMuted ? '' : 'btn-danger'}" onclick="toggleDeviceMute('${device.id}')">
+                  ${device.isMuted ? 'Unmute' : 'Mute'}
+                </button>` : ''}
             </div>
           </div>
           ${controlsHtml}
         `;
-        deviceList.appendChild(div);
+        
+        listContainer.appendChild(div);
       });
     });
 
-    window.toggleDeviceMute = (targetId) => { socket.emit('toggle_device_mute', targetId); };
-    window.updateDeviceAudio = (targetId, param, value) => { 
-      const displayElem = document.getElementById(`val-${param}-${targetId}`);
-      if (displayElem) {
-        displayElem.innerText = param === 'pan' ? formatPanText(value) : value + 's';
-      }
-      socket.emit('update_device_audio_setting', { targetId, param, value }); 
-    };
-
+    // File Upload & Queue Handlers
     document.getElementById('btnAddSong').addEventListener('click', () => {
       const fileInput = document.getElementById('songFileInput');
       const btn = document.getElementById('btnAddSong');
@@ -475,17 +494,25 @@
       btn.disabled = true; btn.textContent = "Processing File...";
       const reader = new FileReader();
       reader.onload = (e) => {
-        socket.emit('add_to_queue', { id: 'song-' + Date.now(), title: file.name, url: e.target.result });
+        // Strip file extension to display clean track title
+        const cleanTitle = file.name.replace(/\.[^/.]+$/, "");
+        socket.emit('add_to_queue', { id: 'song-' + Date.now(), title: cleanTitle, url: e.target.result });
         fileInput.value = ''; btn.disabled = false; btn.textContent = "Upload & Add to Queue";
       };
       reader.onerror = () => { alert("Error reading file"); btn.disabled = false; btn.textContent = "Upload & Add to Queue"; };
       reader.readAsDataURL(file);
     });
 
-    socket.on('queue_update', (data) => { currentPlaylist = data.playlist; currentSongIdx = data.currentSongIndex; renderQueue(); });
+    socket.on('queue_update', (data) => { 
+      currentPlaylist = data.playlist; 
+      currentSongIdx = data.currentSongIndex; 
+      renderQueue(); 
+    });
 
     socket.on('change_track', (data) => {
-      isRemoteChange = true; audioSource.src = data.song.url; audio.load();
+      isRemoteChange = true; 
+      audioSource.src = data.song.url; 
+      audio.load();
       nowPlayingText.textContent = `Track: ${data.song.title}`;
       audio.play().then(() => { isRemoteChange = false; }).catch(() => { isRemoteChange = false; });
     });
