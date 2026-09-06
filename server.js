@@ -18,8 +18,9 @@ const MAX_ADMINS = 2;
 let activeAdminsCount = 0;
 let isGlobalMuted = false;
 
-// Global audio settings (Pan, Master Volume, EQ, etc.)
+// Global audio settings (Pan & Delay)
 let globalAudioSettings = {
+  delay: 0,
   pan: 0
 };
 
@@ -60,6 +61,7 @@ io.on('connection', (socket) => {
   // Send current queue state & global settings to newly connected device
   socket.emit('queue_update', { playlist, currentSongIndex });
   socket.emit('global_mute_state', { isMuted: isGlobalMuted });
+  socket.emit('apply_global_audio_setting', { param: 'delay', value: globalAudioSettings.delay });
   socket.emit('apply_global_audio_setting', { param: 'pan', value: globalAudioSettings.pan });
   
   broadcastDeviceList();
@@ -123,7 +125,7 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Update Global Audio Settings (Global Pan)
+  // Update Global Audio Settings (Global Delay, Global Pan)
   socket.on('update_global_audio_setting', (data) => {
     const dev = connectedDevices.get(socket.id);
     if (!dev || !dev.isAdmin) return;
