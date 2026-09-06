@@ -7,7 +7,7 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: { origin: "*" },
-  maxHttpBufferSize: 1e8 // Allow up to 100MB file uploads
+  maxHttpBufferSize: 1e8 // 100MB buffer for file uploads
 });
 
 app.use(express.static(path.join(__dirname, 'public')));
@@ -18,16 +18,16 @@ const MAX_ADMINS = 2;
 let activeAdminsCount = 0;
 let isGlobalMuted = false;
 
-// Global audio settings (Pan & Delay)
+// Global Audio Settings (Pan & Delay)
 let globalAudioSettings = {
   delay: 0,
   pan: 0
 };
 
-// Store connected devices and their individual settings
+// Store connected devices and settings
 const connectedDevices = new Map();
 
-// Song Queue State
+// Song Queue State with simplified track name
 let playlist = [
   { id: 'demo-1', title: 'Default Demo Track', url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3' }
 ];
@@ -65,6 +65,10 @@ io.on('connection', (socket) => {
   socket.emit('apply_global_audio_setting', { param: 'pan', value: globalAudioSettings.pan });
   
   broadcastDeviceList();
+
+  socket.on('request_device_list_refresh', () => {
+    broadcastDeviceList();
+  });
 
   // Admin Login Handler
   socket.on('admin_login', (data) => {
@@ -139,7 +143,13 @@ io.on('connection', (socket) => {
 
   // Queue Management
   socket.on('add_to_queue', (song) => {
-    playlist.push(song);
+    // Sanitize title to strip extensions if present
+    const cleanTitle = song.title.replace(/\.[^/.]+$/, "");
+    playlist.push({
+      id: song.id,
+      title: cleanTitle,
+      url: song.url
+    });
     io.emit('queue_update', { playlist, currentSongIndex });
   });
 
