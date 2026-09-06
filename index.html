@@ -44,7 +44,7 @@
     .control-group { display: flex; justify-content: space-between; align-items: center; font-size: 0.8rem; background: #0f172a; padding: 0.5rem; border-radius: 4px; border: 1px solid #334155; margin-bottom: 0.3rem; }
     .control-group label { color: #f8fafc; font-weight: 600; }
     input[type="range"] { width: 50%; cursor: pointer; }
-    .val-display { font-size: 0.8rem; color: var(--accent); min-width: 50px; text-align: right; font-weight: bold; }
+    .val-display { font-size: 0.8rem; color: var(--accent); min-width: 55px; text-align: right; font-weight: bold; }
     
     .btn { background: #0284c7; border: none; color: white; padding: 0.4rem 0.8rem; border-radius: 4px; cursor: pointer; font-size: 0.8rem; }
     .btn-sm { padding: 0.2rem 0.5rem; font-size: 0.75rem; }
@@ -98,9 +98,14 @@
       <button id="btnToggleMic" class="btn btn-mic">🎤 Start WebRTC Mic Broadcast</button>
     </div>
 
-    <!-- Global Controls -->
+    <!-- Master / Global Audio Controls -->
     <div class="card">
-      <h3>Master / Global Audio Controls</h3>
+      <h3 style="margin-bottom: 0.5rem;">Master / Global Audio Controls</h3>
+      <div class="control-group">
+        <label>Global Delay</label>
+        <input type="range" id="globalDelaySlider" min="0" max="3" step="0.05" value="0">
+        <span id="valGlobalDelay" class="val-display">0s</span>
+      </div>
       <div class="control-group">
         <label>Global Stereo Pan</label>
         <input type="range" id="globalPanSlider" min="-1" max="1" step="0.1" value="0">
@@ -164,6 +169,9 @@
     const nowPlayingText = document.getElementById('nowPlayingText');
     const btnGlobalMute = document.getElementById('btnGlobalMute');
     const btnToggleMic = document.getElementById('btnToggleMic');
+
+    const globalDelaySlider = document.getElementById('globalDelaySlider');
+    const valGlobalDelay = document.getElementById('valGlobalDelay');
     const globalPanSlider = document.getElementById('globalPanSlider');
     const valGlobalPan = document.getElementById('valGlobalPan');
 
@@ -183,7 +191,7 @@
     let currentSongIdx = 0;
     let connectedDevicesList = [];
 
-    let audioCtx, source, masterMuteGain, pannerNode, chDelayNode, lowFilter, midFilter, highFilter, echoDelayNode, echoFeedbackGainNode;
+    let audioCtx, source, masterMuteGain, pannerNode, chDelayNode;
 
     function initAudioContext() {
       if (audioCtx) return;
@@ -194,40 +202,24 @@
       source = audioCtx.createMediaElementSource(audio);
       masterMuteGain = audioCtx.createGain();
 
-      // Pan node using StereoPannerNode (or fallback)
+      chDelayNode = audioCtx.createDelay(5.0); 
+      chDelayNode.delayTime.value = 0;
+
       if (audioCtx.createStereoPanner) {
         pannerNode = audioCtx.createStereoPanner();
         pannerNode.pan.value = 0;
       }
 
-      chDelayNode = audioCtx.createDelay(5.0); chDelayNode.delayTime.value = 0;
-      lowFilter = audioCtx.createBiquadFilter(); lowFilter.type = "lowshelf"; lowFilter.frequency.value = 320;
-      midFilter = audioCtx.createBiquadFilter(); midFilter.type = "peaking"; midFilter.frequency.value = 1000; midFilter.Q.value = 0.5;
-      highFilter = audioCtx.createBiquadFilter(); highFilter.type = "highshelf"; highFilter.frequency.value = 3200;
-
-      echoDelayNode = audioCtx.createDelay(5.0); echoDelayNode.delayTime.value = 0;
-      echoFeedbackGainNode = audioCtx.createGain(); echoFeedbackGainNode.gain.value = 0;
-
-      // Audio Chain
+      // Audio Graph Pipeline
       source.connect(chDelayNode);
-      chDelayNode.connect(lowFilter);
-      lowFilter.connect(midFilter);
-      midFilter.connect(highFilter);
-      
       if (pannerNode) {
-        highFilter.connect(pannerNode);
+        chDelayNode.connect(pannerNode);
         pannerNode.connect(masterMuteGain);
       } else {
-        highFilter.connect(masterMuteGain);
+        chDelayNode.connect(masterMuteGain);
       }
 
-      masterMuteGain.connect(echoDelayNode);
-      echoDelayNode.connect(echoFeedbackGainNode);
-      echoFeedbackGainNode.connect(echoDelayNode);
-      echoDelayNode.connect(audioCtx.destination);
-
       masterMuteGain.connect(audioCtx.destination);
-
       updateEffectiveGain();
     }
 
@@ -265,7 +257,13 @@
       } else { alert(data.message); }
     });
 
-    // --- Global Pan Event Listener ---
+    // --- Global Controls Handlers ---
+    globalDelaySlider.addEventListener('input', (e) => {
+      const val = e.target.value;
+      valGlobalDelay.textContent = val + 's';
+      socket.emit('update_global_audio_setting', { param: 'delay', value: val });
+    });
+
     globalPanSlider.addEventListener('input', (e) => {
       const val = e.target.value;
       valGlobalPan.textContent = formatPanText(val);
@@ -274,10 +272,16 @@
 
     socket.on('apply_global_audio_setting', (data) => {
       initAudioContext();
+      const val = parseFloat(data.value);
+      if (data.param === 'delay' && chDelayNode) {
+        chDelayNode.delayTime.value = val;
+        globalDelaySlider.value = val;
+        valGlobalDelay.textContent = val + 's';
+      }
       if (data.param === 'pan' && pannerNode) {
-        pannerNode.pan.value = parseFloat(data.value);
-        globalPanSlider.value = data.value;
-        valGlobalPan.textContent = formatPanText(data.value);
+        pannerNode.pan.value = val;
+        globalPanSlider.value = val;
+        valGlobalPan.textContent = formatPanText(val);
       }
     });
 
